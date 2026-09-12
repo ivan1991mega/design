@@ -199,7 +199,7 @@
                             <label>Dimensioni:</label>
                             <select name="size" required>
                                 <option value="piccolo">Piccolo (< 20 m²)</option>
-                                <option value="medio">Medio (20-50 m²)</option>
+                                <option value="medio" selected>Medio (20-50 m²)</option>
                                 <option value="grande">Grande (> 50 m²)</option>
                             </select>
                         </div>
@@ -207,26 +207,82 @@
                             <label>Budget:</label>
                             <select name="budget" required>
                                 <option value="economico">Economico</option>
-                                <option value="medio">Medio</option>
+                                <option value="medio" selected>Medio</option>
                                 <option value="lusso">Lusso</option>
                             </select>
                         </div>
                         <div>
-                            <label>Stili (seleziona multipli):</label>
-                            <input type="checkbox" name="style" value="moderno"> Moderno
-                            <input type="checkbox" name="style" value="classico"> Classico
-                            <input type="checkbox" name="style" value="minimalista"> Minimalista
-                            <input type="checkbox" name="style" value="rustico"> Rustico
-                            <input type="checkbox" name="style" value="lusso"> Lusso
+                            <label>Stili:</label><br>
+                            <label><input type="checkbox" name="style" value="moderno" checked> Moderno</label>
+                            <label><input type="checkbox" name="style" value="classico"> Classico</label>
+                            <label><input type="checkbox" name="style" value="minimalista"> Minimalista</label>
+                            <label><input type="checkbox" name="style" value="rustico"> Rustico</label>
+                            <label><input type="checkbox" name="style" value="industriale"> Industriale</label>
+                            <label><input type="checkbox" name="style" value="lusso"> Lusso</label>
+                            <label><input type="checkbox" name="style" value="scandinavo"> Scandinavo</label>
+                            <label><input type="checkbox" name="style" value="mediterraneo"> Mediterraneo</label>
                         </div>
                         <div>
-                            <label>Colori (seleziona multipli):</label>
-                            <input type="checkbox" name="color" value="bianco"> Bianco
-                            <input type="checkbox" name="color" value="grigio"> Grigio
-                            <input type="checkbox" name="color" value="nero"> Nero
-                            <input type="checkbox" name="color" value="marrone"> Marrone
-                            <input type="checkbox" name="color" value="blu"> Blu
-                            <input type="checkbox" name="color" value="verde"> Verde
+                            <label>Palette colori:</label><br>
+                            <label><input type="checkbox" name="color" value="bianco gesso"> Bianco</label>
+                            <label><input type="checkbox" name="color" value="panna"> Panna</label>
+                            <label><input type="checkbox" name="color" value="greige"> Greige</label>
+                            <label><input type="checkbox" name="color" value="grigio caldo"> Grigio caldo</label>
+                            <label><input type="checkbox" name="color" value="grigio antracite"> Antracite</label>
+                            <label><input type="checkbox" name="color" value="nero soft"> Nero</label>
+                            <label><input type="checkbox" name="color" value="rovere naturale"> Rovere</label>
+                            <label><input type="checkbox" name="color" value="noce"> Noce</label>
+                            <label><input type="checkbox" name="color" value="terracotta"> Terracotta</label>
+                            <label><input type="checkbox" name="color" value="verde oliva"> Verde oliva</label>
+                            <label><input type="checkbox" name="color" value="blu petrolio"> Blu petrolio</label>
+                            <label><input type="checkbox" name="color" value="sabbia"> Sabbia</label>
+                            <div class="form-group" style="margin-top:10px;">
+                                <label>Colore personalizzato (hex o nome RAL):</label>
+                                <input type="text" name="customColor" placeholder="#C4B7A6 oppure RAL 9010">
+                            </div>
+                        </div>
+                        <div>
+                            <label>Pavimento:</label>
+                            <select name="floorFinish">
+                                <option value="parquet rovere naturale spazzolato">Parquet rovere naturale</option>
+                                <option value="parquet rovere scuro">Parquet rovere scuro</option>
+                                <option value="parquet noce canaletto">Parquet noce</option>
+                                <option value="listoni rovere sbiancato">Rovere sbiancato</option>
+                                <option value="laminato effetto legno">Laminato legno</option>
+                                <option value="piastrelle gres porcellanato effetto cemento 60x60">Gres effetto cemento</option>
+                                <option value="piastrelle gres effetto marmo calacatta">Gres effetto marmo</option>
+                                <option value="piastrelle gres effetto pietra">Gres effetto pietra</option>
+                                <option value="cotto fatto a mano">Cotto</option>
+                                <option value="microcemento continuo">Microcemento</option>
+                                <option value="moquette loop neutra">Moquette</option>
+                            </select>
+                            <input type="file" name="floorTexture" accept="image/*" style="margin-top:8px;">
+                            <small style="color:var(--text-light);">Opzionale: foto catalogo pavimento</small>
+                        </div>
+                        <div>
+                            <label>Rivestimento pareti:</label>
+                            <select name="wallFinish">
+                                <option value="pittura liscia opaca">Pittura liscia</option>
+                                <option value="pittura effetto calce">Effetto calce</option>
+                                <option value="carta da parati geometrica contemporanea">Carta da parati geometrica</option>
+                                <option value="carta da parati botanica">Carta da parati botanica</option>
+                                <option value="carta da parati tessuto lino">Carta da parati tessuto</option>
+                                <option value="boiserie legno verticale">Boiserie legno</option>
+                                <option value="rivestimento gres grande formato">Gres parete</option>
+                                <option value="rivestimento pietra naturale a lastre">Pietra naturale</option>
+                                <option value="mattone a vista bianco">Mattone bianco</option>
+                                <option value="pannelli cannettati legno">Cannettato</option>
+                            </select>
+                            <input type="file" name="wallTexture" accept="image/*" style="margin-top:8px;">
+                            <small style="color:var(--text-light);">Opzionale: foto catalogo rivestimento</small>
+                        </div>
+                        <div>
+                            <label>Viste da generare:</label><br>
+                            <label><input type="checkbox" name="view" value="frontale" checked> Frontale</label>
+                            <label><input type="checkbox" name="view" value="angolo" checked> Angolo</label>
+                            <label><input type="checkbox" name="view" value="dettaglio"> Dettaglio materiali</label>
+                            <label><input type="checkbox" name="view" value="laterale"> Laterale</label>
+                            <p style="color:var(--text-light);font-size:12px;margin-top:6px;">Ogni vista = 1 generazione AI. Poi puoi farle scorrere come short.</p>
                         </div>
                         <div>
                             <label>Illuminazione:</label>
@@ -234,17 +290,19 @@
                                 <option value="naturale">Naturale</option>
                                 <option value="calda">Calda</option>
                                 <option value="fredda">Fredda</option>
-                                <option value="mista">Mista</option>
+                                <option value="mista" selected>Mista</option>
                             </select>
                         </div>
-                        <button type="submit" style="width: 100%;">🎨 Genera Render</button>
+                        <button type="submit" style="width: 100%;">🎨 Genera viste</button>
                     </form>
                     <div id="configLoading" style="display: none;" class="loading">
-                        ⏳ Generazione render in corso...
+                        ⏳ Generazione viste in corso (può richiedere 1-2 minuti)...
                     </div>
                     <div id="configResult" style="display: none;">
-                        <img id="configImg" style="width: 100%; border-radius: 8px; margin-bottom: 20px;">
-                        <button onclick="resetConfig()" style="width: 100%;">🔄 Ricomincia</button>
+                        <img id="configImg" style="width: 100%; border-radius: 8px; margin-bottom: 12px;">
+                        <div id="configViewBtns" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;"></div>
+                        <button type="button" onclick="playViews()" style="width:100%;margin-bottom:8px;">▶ Short viste</button>
+                        <button type="button" onclick="resetConfig()" style="width: 100%;">🔄 Ricomincia</button>
                     </div>
                 </div>
             </div>
@@ -477,6 +535,9 @@ function resetRender() {
 }
 
 // SUBMIT CONFIG
+let configViews = [];
+let viewTimer = null;
+
 async function submitConfig(e) {
     e.preventDefault();
     if (!currentClient) {
@@ -484,38 +545,78 @@ async function submitConfig(e) {
         return;
     }
 
-    const fd = new FormData(document.getElementById('configForm'));
-    document.getElementById('configForm').style.display = 'none';
+    const form = document.getElementById('configForm');
+    const fd = new FormData(form);
+    const send = new FormData();
+    send.append('clientId', currentClient);
+    send.append('roomType', fd.get('room'));
+    send.append('size', fd.get('size'));
+    send.append('budget', fd.get('budget'));
+    send.append('lighting', fd.get('lighting') || 'naturale');
+    send.append('floorFinish', fd.get('floorFinish') || '');
+    send.append('wallFinish', fd.get('wallFinish') || '');
+    send.append('customColor', fd.get('customColor') || '');
+    send.append('styles', JSON.stringify(fd.getAll('style')));
+    send.append('colors', JSON.stringify(fd.getAll('color')));
+    send.append('views', JSON.stringify(fd.getAll('view')));
+    const floor = form.querySelector('[name="floorTexture"]').files[0];
+    const wall = form.querySelector('[name="wallTexture"]').files[0];
+    if (floor) send.append('floorTexture', floor);
+    if (wall) send.append('wallTexture', wall);
+
+    form.style.display = 'none';
     document.getElementById('configLoading').style.display = 'block';
 
     const res = await fetch('/api/renders/configure-environment', {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            clientId: currentClient,
-            roomType: fd.get('room'),
-            size: fd.get('size'),
-            budget: fd.get('budget'),
-            styles: fd.getAll('style'),
-            colors: fd.getAll('color'),
-            lighting: fd.get('lighting') || 'naturale'
-        })
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: send
     });
 
     const data = await res.json();
     if (data.success) {
-        document.getElementById('configImg').src = data.data.renderUrl;
+        configViews = data.data.views && data.data.views.length
+            ? data.data.views
+            : [{ view: 'frontale', renderUrl: data.data.renderUrl }];
+        showView(0);
+        const btns = document.getElementById('configViewBtns');
+        btns.innerHTML = '';
+        configViews.forEach((v, i) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.textContent = v.view;
+            b.onclick = () => showView(i);
+            btns.appendChild(b);
+        });
         document.getElementById('configLoading').style.display = 'none';
         document.getElementById('configResult').style.display = 'block';
         loadStats();
     } else {
-        document.getElementById('configForm').style.display = 'grid';
+        form.style.display = 'grid';
         document.getElementById('configLoading').style.display = 'none';
         alert('❌ Errore: ' + data.error);
     }
 }
 
+function showView(i) {
+    const v = configViews[i];
+    if (v) document.getElementById('configImg').src = v.renderUrl;
+}
+
+function playViews() {
+    if (!configViews.length) return;
+    let i = 0;
+    if (viewTimer) clearInterval(viewTimer);
+    showView(0);
+    viewTimer = setInterval(() => {
+        i = (i + 1) % configViews.length;
+        showView(i);
+    }, 1600);
+}
+
 function resetConfig() {
+    if (viewTimer) clearInterval(viewTimer);
+    configViews = [];
     document.getElementById('configForm').reset();
     document.getElementById('configForm').style.display = 'grid';
     document.getElementById('configResult').style.display = 'none';
