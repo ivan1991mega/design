@@ -7,7 +7,7 @@ import OpenAI from 'openai';
 
 import Render from '../models/Render.js';
 import Client from '../models/Client.js';
-import { authenticate } from '../middleware/auth.js';
+import { authenticate } from '../middleware/errorHandler.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
@@ -49,16 +49,48 @@ const upload = multer({
   }
 });
 
-async function saveRemoteImage(url, prefix) {
-  const imageResponse = await fetch(url);
-  if (!imageResponse.ok) {
-    throw new Error(`Download immagine DALL-E fallito (${imageResponse.status})`);
-  }
-  const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
-  const imageName = `${prefix}-${Date.now()}.png`;
+function imageModel() {
+  return process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2';
+}
+
+async function saveGeneratedImage(result, prefix) {
   await fs.mkdir(UPLOADS_DIR, { recursive: true });
-  await fs.writeFile(path.join(UPLOADS_DIR, imageName), imageBuffer);
+  const imageName = `${prefix}-${Date.now()}.png`;
+  const dest = path.join(UPLOADS_DIR, imageName);
+
+  if (result.b64_json) {
+    await fs.writeFile(dest, Buffer.from(result.b64_json, 'base64'));
+  } else if (result.url) {
+    const imageResponse = await fetch(result.url);
+    if (!imageResponse.ok) {
+      throw new Error(`Download immagine fallito (${imageResponse.status})`);
+    }
+    await fs.writeFile(dest, Buffer.from(await imageResponse.arrayBuffer()));
+  } else {
+    throw new Error('Nessuna immagine restituita dal modello');
+  }
+
   return { imageName, imageUrl: `/uploads/${imageName}` };
+}
+
+async function generateInteriorImage(prompt) {
+  const openai = getOpenAI();
+  const model = imageModel();
+  const params = {
+    model,
+    prompt,
+    n: 1,
+    size: '1024x1024'
+  };
+
+  if (model.startsWith('gpt-image')) {
+    params.quality = process.env.OPENAI_IMAGE_QUALITY || 'medium';
+  }
+
+  const response = await openai.images.generate(params);
+  const item = response.data?.[0];
+  if (!item) throw new Error('Il modello immagini non ha restituito un risultato');
+  return item;
 }
 
 router.get('/client/:clientId', async (req, res, next) => {
@@ -163,19 +195,8 @@ Lighting: ${lighting || 'natural and artificial'}
 Colors: ${colors || 'neutral'}
 High quality photography, realistic textures, professional lighting.`;
 
-    const openai = getOpenAI();
-    const dalleResponse = await openai.images.generate({
-      model: 'dall-e-3',
-      prompt,
-      n: 1,
-      size: '1024x1024',
-      quality: 'hd'
-    });
-
-    const remoteUrl = dalleResponse.data?.[0]?.url;
-    if (!remoteUrl) throw new Error('DALL-E non ha restituito un URL');
-
-    const { imageName, imageUrl } = await saveRemoteImage(remoteUrl, 'render');
+    const item = await generateInteriorImage(prompt);
+    const { imageName, imageUrl } = await saveGeneratedImage(item, 'render');
 
     const render = await Render.create({
       clientId,
@@ -227,19 +248,8 @@ Budget: ${budget || 'medium'}
 Size: ${size}
 4K photorealistic quality, professional lighting, coherent furniture.`;
 
-    const openai = getOpenAI();
-    const dalleResponse = await openai.images.generate({
-      model: 'dall-e-3',
-      prompt,
-      n: 1,
-      size: '1024x1024',
-      quality: 'hd'
-    });
-
-    const remoteUrl = dalleResponse.data?.[0]?.url;
-    if (!remoteUrl) throw new Error('DALL-E non ha restituito un URL');
-
-    const { imageName, imageUrl } = await saveRemoteImage(remoteUrl, `config-${roomType}`);
+    const item = await generateInteriorImage(prompt);
+    const { imageName, imageUrl } = await saveGeneratedImage(item, `config-${roomType}`);
 
     const render = await Render.create({
       clientId,
