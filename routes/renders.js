@@ -4,116 +4,69 @@ import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import OpenAI from 'openai';
+import fetch from 'node-fetch';
 
 import Render from '../models/Render.js';
 import Client from '../models/Client.js';
 import { authenticate } from '../middleware/errorHandler.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
 const router = express.Router();
 
-router.use(authenticate);
-
-function getOpenAI() {
-  if (!process.env.OPENAI_API_KEY) {
-    const err = new Error('OPENAI_API_KEY non configurata');
-    err.status = 500;
-    throw err;
-  }
-  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-}
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
 
 const storage = multer.diskStorage({
   destination: async (req, file, cb) => {
-    try {
-      await fs.mkdir(UPLOADS_DIR, { recursive: true });
-      cb(null, UPLOADS_DIR);
-    } catch (err) {
-      cb(err);
-    }
+    await fs.mkdir(path.join(__dirname, '../uploads'), { recursive: true });
+    cb(null, path.join(__dirname, '../uploads'));
   },
   filename: (req, file, cb) => {
-    const safe = path.basename(file.originalname).replace(/[^\w.\-]+/g, '_');
-    cb(null, `${Date.now()}-${safe}`);
+    cb(null, `${Date.now()}-${file.originalname}`);
   }
 });
 
 const upload = multer({
   storage,
-  limits: { fileSize: 20 * 1024 * 1024 },
+  limits: { fileSize: 50 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    const allowed = ['image/jpeg', 'image/png', 'image/webp'];
-    if (allowed.includes(file.mimetype)) cb(null, true);
-    else cb(new Error('Tipo file non supportato (usa JPG, PNG o WebP)'));
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Tipo file non supportato'));
+    }
   }
 });
 
-function imageModel() {
-  return process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2';
-}
-
-async function saveGeneratedImage(result, prefix) {
-  await fs.mkdir(UPLOADS_DIR, { recursive: true });
-  const imageName = `${prefix}-${Date.now()}.png`;
-  const dest = path.join(UPLOADS_DIR, imageName);
-
-  if (result.b64_json) {
-    await fs.writeFile(dest, Buffer.from(result.b64_json, 'base64'));
-  } else if (result.url) {
-    const imageResponse = await fetch(result.url);
-    if (!imageResponse.ok) {
-      throw new Error(`Download immagine fallito (${imageResponse.status})`);
-    }
-    await fs.writeFile(dest, Buffer.from(await imageResponse.arrayBuffer()));
-  } else {
-    throw new Error('Nessuna immagine restituita dal modello');
-  }
-
-  return { imageName, imageUrl: `/uploads/${imageName}` };
-}
-
-async function generateInteriorImage(prompt) {
-  const openai = getOpenAI();
-  const model = imageModel();
-  const params = {
-    model,
-    prompt,
-    n: 1,
-    size: '1024x1024'
-  };
-
-  if (model.startsWith('gpt-image')) {
-    params.quality = process.env.OPENAI_IMAGE_QUALITY || 'medium';
-  }
-
-  const response = await openai.images.generate(params);
-  const item = response.data?.[0];
-  if (!item) throw new Error('Il modello immagini non ha restituito un risultato');
-  return item;
-}
-
-router.get('/client/:clientId', async (req, res, next) => {
+// Get renders for client
+router.get('/client/:clientId', authenticate, async (req, res, next) => {
   try {
     const client = await Client.findOne({ _id: req.params.clientId, adminId: req.adminId });
-    if (!client) return res.status(404).json({ success: false, error: 'Cliente non trovato' });
-    const renders = await Render.find({ clientId: req.params.clientId }).sort({ createdAt: -1 });
+    if (!client) {
+      return res.status(404).json({ success: false, error: 'Cliente non trovato' });
+    }
+
+    const renders = await Render.find({ clientId: req.params.clientId })
+      .sort({ createdAt: -1 });
+
     res.json({ success: true, data: renders });
   } catch (error) {
     next(error);
   }
 });
 
-router.post('/upload', upload.single('image'), async (req, res, next) => {
+// Upload render
+router.post('/upload', authenticate, upload.single('image'), async (req, res, next) => {
   try {
     const { clientId, title, description } = req.body;
-    if (!req.file) return res.status(400).json({ success: false, error: 'File non caricato' });
-    if (!clientId) return res.status(400).json({ success: false, error: 'clientId obbligatorio' });
+    
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'File non caricato' });
+    }
 
-    const client = await Client.findOne({ _id: clientId, adminId: req.adminId });
-    if (!client) return res.status(404).json({ success: false, error: 'Cliente non trovato' });
-
-    const render = await Render.create({
+    const render = new Render({
       clientId,
       adminId: req.adminId,
       title: title || 'Render',
@@ -123,22 +76,29 @@ router.post('/upload', upload.single('image'), async (req, res, next) => {
       renderType: 'image'
     });
 
-    res.status(201).json({ success: true, data: render });
+    await render.save();
+    res.json({ success: true, data: render });
   } catch (error) {
-    if (req.file) await fs.unlink(req.file.path).catch(() => {});
+    if (req.file) {
+      await fs.unlink(req.file.path).catch(() => {});
+    }
     next(error);
   }
 });
 
-router.post('/analyze-image', upload.single('image'), async (req, res, next) => {
+// Vision API - Analyze image
+router.post('/analyze-image', authenticate, upload.single('image'), async (req, res, next) => {
   try {
-    if (!req.file) return res.status(400).json({ success: false, error: 'Immagine non caricata' });
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'Immagine non caricata' });
+    }
 
     const imageBuffer = await fs.readFile(req.file.path);
     const base64Image = imageBuffer.toString('base64');
     const mimeType = req.file.mimetype || 'image/jpeg';
 
-    const openai = getOpenAI();
+    console.log('👁️ Calling Vision API (GPT-4O)...');
+
     const response = await openai.chat.completions.create({
       model: 'gpt-4o',
       max_tokens: 1000,
@@ -148,163 +108,247 @@ router.post('/analyze-image', upload.single('image'), async (req, res, next) => 
           content: [
             {
               type: 'image_url',
-              image_url: { url: `data:${mimeType};base64,${base64Image}` }
+              image_url: {
+                url: `data:${mimeType};base64,${base64Image}`
+              }
             },
             {
               type: 'text',
               text: `Analizza questa immagine di interior design in dettaglio. Identifica:
-1. Tipo di stanza
-2. Stile principale
-3. Colori dominanti
-4. Materiali visibili
-5. Dimensioni stimate
-6. Illuminazione
-7. Descrizione generale
+1. Tipo di stanza (salotto, camera, cucina, bagno, ufficio, etc.)
+2. Stile principale (moderno, classico, rustico, minimalista, lusso, etc.)
+3. Colori dominanti (scrivi i colori visti)
+4. Materiali visibili (legno, marmo, vetro, tessuti, etc.)
+5. Dimensioni stimate (piccola, media, grande)
+6. Illuminazione presente
+7. Descrizione generale della qualità e dello spazio
 
-Rispondi in italiano, in formato chiaro e professionale.`
+Rispondi in formato chiaro e professionale.`
             }
           ]
         }
       ]
     });
 
-    const analysis = response.choices?.[0]?.message?.content || '';
+    const analysis = response.choices[0].message.content;
+
     await fs.unlink(req.file.path).catch(() => {});
 
-    res.json({ success: true, data: { analysis } });
+    console.log('✅ Vision analysis complete');
+
+    res.json({
+      success: true,
+      data: {
+        analysis,
+        imagePath: `/uploads/${path.basename(req.file.path)}`
+      }
+    });
   } catch (error) {
-    if (req.file) await fs.unlink(req.file.path).catch(() => {});
-    next(error);
+    console.error('❌ Vision API Error:', error);
+    if (req.file) {
+      await fs.unlink(req.file.path).catch(() => {});
+    }
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-router.post('/generate-render', async (req, res, next) => {
+// DALL-E 3 - Generate render from analysis
+router.post('/generate-render', authenticate, async (req, res, next) => {
   try {
     const { clientId, analysis, style, lighting, colors } = req.body;
+
     if (!clientId || !analysis) {
-      return res.status(400).json({ success: false, error: 'Dati mancanti (clientId, analysis)' });
+      return res.status(400).json({ success: false, error: 'Dati mancanti' });
     }
 
-    const client = await Client.findOne({ _id: clientId, adminId: req.adminId });
-    if (!client) return res.status(404).json({ success: false, error: 'Cliente non trovato' });
+    const prompt = `Sei un designer di interni professionista. Basandoti sulla seguente analisi, crea un render fotorealistico di interior design di alta qualità:
 
-    const prompt = `Professional photorealistic interior design render.
-Analysis: ${String(analysis).slice(0, 1200)}
-Style: ${style || 'contemporary'}
-Lighting: ${lighting || 'natural and artificial'}
-Colors: ${colors || 'neutral'}
-High quality photography, realistic textures, professional lighting.`;
+ANALISI IMMAGINE: ${analysis}
 
-    const item = await generateInteriorImage(prompt);
-    const { imageName, imageUrl } = await saveGeneratedImage(item, 'render');
+PERSONALIZZAZIONE:
+- Stile: ${style || 'contemporaneo'}
+- Illuminazione: ${lighting || 'naturale e artificiale'}
+- Colori: ${colors || 'neutri'}
 
-    const render = await Render.create({
+Crea un rendering iperrealistico in stile fotografico, con dettagli ricchi, texture realistiche e illuminazione professionale.`;
+
+    console.log('🎨 Calling DALL-E 3...');
+
+    const dalleResponse = await openai.images.generate({
+      model: 'dall-e-3',
+      prompt: prompt,
+      n: 1,
+      size: '1024x1024',
+      quality: 'hd'
+    });
+
+    const renderUrl = dalleResponse.data[0].url;
+    const imageResponse = await fetch(renderUrl);
+    const imageBuffer = await imageResponse.buffer();
+    const imageName = `render-${Date.now()}.jpg`;
+    const imagePath = path.join('uploads', imageName);
+
+    await fs.mkdir('uploads', { recursive: true });
+    await fs.writeFile(imagePath, imageBuffer);
+
+    console.log('✅ Render generated');
+
+    const render = new Render({
       clientId,
       adminId: req.adminId,
       title: `Render AI - ${new Date().toLocaleDateString('it-IT')}`,
-      description: 'Render generato da immagine analizzata',
-      imageUrl,
+      description: `Render generato da immagine analizzata`,
+      imageUrl: `/${imagePath}`,
       imageFile: imageName,
       style: style || 'contemporaneo',
       lighting: lighting || 'mista',
-      colors: colors ? String(colors).split(',').map((c) => c.trim()).filter(Boolean) : [],
+      colors: colors ? colors.split(',').map(c => c.trim()) : [],
       renderType: 'dalle'
     });
+
+    await render.save();
+
+    console.log(`✅ Saved: ${render._id}`);
 
     res.json({
       success: true,
       data: {
         renderId: render._id,
-        renderUrl: imageUrl,
+        renderUrl: `/${imagePath}`,
         title: render.title,
         createdAt: render.createdAt
       }
     });
   } catch (error) {
-    next(error);
+    console.error('❌ DALL-E Error:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-router.post('/configure-environment', async (req, res, next) => {
+// Environment Configurator
+router.post('/configure-environment', authenticate, async (req, res, next) => {
   try {
     const { clientId, roomType, size, budget, styles, colors, materials, lighting } = req.body;
+
     if (!clientId || !roomType || !size) {
       return res.status(400).json({ success: false, error: 'Campi obbligatori mancanti' });
     }
 
-    const client = await Client.findOne({ _id: clientId, adminId: req.adminId });
-    if (!client) return res.status(404).json({ success: false, error: 'Cliente non trovato' });
+    console.log(`🎨 Configuratore: ${roomType}`);
 
     const stylesText = Array.isArray(styles) ? styles.join(', ') : styles || 'moderno';
     const colorsText = Array.isArray(colors) ? colors.join(', ') : colors || 'neutro';
     const materialsText = Array.isArray(materials) ? materials.join(', ') : materials || 'vari';
 
-    const prompt = `Photorealistic interior render of a ${roomType}.
-Style: ${stylesText}
-Colors: ${colorsText}
-Materials: ${materialsText}
-Lighting: ${lighting || 'mixed'}
-Budget: ${budget || 'medium'}
-Size: ${size}
-4K photorealistic quality, professional lighting, coherent furniture.`;
+    const prompt = `Crea un rendering dettagliato e fotorealistico di una ${roomType}:
+STILE: ${stylesText}
+COLORI: ${colorsText}
+MATERIALI: ${materialsText}
+ILLUMINAZIONE: ${lighting || 'mista'}
+BUDGET: ${budget}
+DIMENSIONI: ${size}
 
-    const item = await generateInteriorImage(prompt);
-    const { imageName, imageUrl } = await saveGeneratedImage(item, `config-${roomType}`);
+Requisiti: qualità 4K fotorealistica, illuminazione professionale, texture realistiche, arredamento coerente con lo stile scelto.`;
 
-    const render = await Render.create({
+    console.log('🎨 Calling DALL-E 3...');
+
+    const dalleResponse = await openai.images.generate({
+      model: 'dall-e-3',
+      prompt: prompt,
+      n: 1,
+      size: '1024x1024',
+      quality: 'hd'
+    });
+
+    const renderUrl = dalleResponse.data[0].url;
+    const imageResponse = await fetch(renderUrl);
+    const imageBuffer = await imageResponse.buffer();
+    const imageName = `config-${roomType}-${Date.now()}.jpg`;
+    const imagePath = path.join('uploads', imageName);
+
+    await fs.mkdir('uploads', { recursive: true });
+    await fs.writeFile(imagePath, imageBuffer);
+
+    console.log('✅ Render generated');
+
+    const render = new Render({
       clientId,
       adminId: req.adminId,
       title: `Configurazione ${roomType}`,
       description: `${roomType} - ${stylesText}`,
-      imageUrl,
+      imageUrl: `/${imagePath}`,
       imageFile: imageName,
       room: roomType,
       style: stylesText,
-      colors: Array.isArray(colors) ? colors : colors ? [colors] : [],
-      materials: Array.isArray(materials) ? materials : materials ? [materials] : [],
+      colors: Array.isArray(colors) ? colors : [colors],
+      materials: Array.isArray(materials) ? materials : [materials],
       lighting: lighting || 'mista',
       renderType: 'config',
-      metadata: { roomType, size, budget, styles, colors, materials, lighting }
+      metadata: {
+        roomType,
+        size,
+        budget,
+        styles,
+        colors,
+        materials,
+        lighting
+      }
     });
+
+    await render.save();
+
+    console.log(`✅ Saved: ${render._id}`);
 
     res.json({
       success: true,
       data: {
         renderId: render._id,
-        renderUrl: imageUrl,
+        renderUrl: `/${imagePath}`,
         roomType,
         size,
         budget,
         description: `${roomType} in stile ${stylesText}`,
-        createdAt: render.createdAt
+        createdAt: new Date()
       }
     });
   } catch (error) {
-    next(error);
+    console.error('❌ Configuratore Error:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-router.get('/configurations/:clientId', async (req, res, next) => {
+// Get configurations
+router.get('/configurations/:clientId', authenticate, async (req, res, next) => {
   try {
     const client = await Client.findOne({ _id: req.params.clientId, adminId: req.adminId });
-    if (!client) return res.status(404).json({ success: false, error: 'Cliente non trovato' });
+    if (!client) {
+      return res.status(404).json({ success: false, error: 'Cliente non trovato' });
+    }
+
     const configurations = await Render.find({
       clientId: req.params.clientId,
       renderType: 'config'
     }).sort({ createdAt: -1 });
+
     res.json({ success: true, data: configurations });
   } catch (error) {
     next(error);
   }
 });
 
-router.delete('/:id', async (req, res, next) => {
+// Delete render
+router.delete('/:id', authenticate, async (req, res, next) => {
   try {
     const render = await Render.findOneAndDelete({ _id: req.params.id, adminId: req.adminId });
-    if (!render) return res.status(404).json({ success: false, error: 'Render non trovato' });
-    if (render.imageFile) {
-      await fs.unlink(path.join(UPLOADS_DIR, render.imageFile)).catch(() => {});
+
+    if (!render) {
+      return res.status(404).json({ success: false, error: 'Render non trovato' });
     }
+
+    if (render.imageFile) {
+      await fs.unlink(path.join('uploads', render.imageFile)).catch(() => {});
+    }
+
     res.json({ success: true, message: 'Render cancellato' });
   } catch (error) {
     next(error);
