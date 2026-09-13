@@ -51,6 +51,15 @@
   @media (max-width:800px){ .grid-2 { grid-template-columns:1fr; } }
   .hint { color:var(--muted); font-size:12px; margin-top:6px; }
   .error { color:#f0b4aa; margin-top:10px; }
+  .req::after { content:" ●"; color:#e07060; font-size:11px; }
+  .invalid input, .invalid select, .invalid textarea, .invalid .file {
+    border-color:#e07060 !important;
+    box-shadow:0 0 0 1px #e07060;
+  }
+  .field-error { color:#e07060; font-size:12px; margin-top:6px; display:none; }
+  .invalid .field-error { display:block; }
+  .error-banner { display:none; background:#3a1f1c; border:1px solid #e07060; color:#f0b4aa; border-radius:12px; padding:12px 14px; margin-bottom:16px; }
+  .error-banner.show { display:block; }
   .file { border:1px dashed var(--line); border-radius:14px; padding:16px; background:var(--bg3); }
   .section { margin-bottom:18px; }
   .room-extra { display:none; }
@@ -94,16 +103,18 @@
     <div id="configStudio" class="tab-content active">
       <div class="card">
         <h2 style="margin-bottom:6px;">Configuratore ambiente</h2>
-        <p class="hint" style="margin-bottom:18px;">Usabile anche senza cliente. Il cliente è facoltativo, serve solo se vuoi archiviare il render sul progetto.</p>
-        <form id="configForm" onsubmit="submitConfig(event)">
+        <p class="hint" style="margin-bottom:18px;">Usabile anche senza cliente. Il ● rosso indica i campi necessari.</p>
+        <div id="configErrorBanner" class="error-banner"></div>
+        <form id="configForm" onsubmit="submitConfig(event)" novalidate>
           <div class="grid-2">
-            <div class="section">
+            <div class="section" id="field-client">
               <label>Cliente (facoltativo)</label>
               <select id="clientSelectConfig" name="clientId"><option value="">— Nessun cliente —</option></select>
+              <div class="field-error">Se il server è ancora vecchio, qui va scelto un cliente.</div>
             </div>
-            <div class="section">
-              <label>Tipo di stanza *</label>
-              <select name="room" id="roomType" required onchange="toggleRoomExtras()">
+            <div class="section" id="field-room">
+              <label class="req">Tipo di stanza</label>
+              <select name="room" id="roomType" onchange="toggleRoomExtras()">
                 <option value="salotto">Soggiorno</option>
                 <option value="cucina">Cucina</option>
                 <option value="bagno">Bagno</option>
@@ -111,6 +122,7 @@
                 <option value="ufficio">Studio</option>
                 <option value="altro">Altro</option>
               </select>
+              <div class="field-error">Scegli il tipo di stanza.</div>
             </div>
           </div>
 
@@ -261,8 +273,8 @@
             </div>
           </div>
 
-          <div class="section">
-            <label>Viste</label>
+          <div class="section" id="field-views">
+            <label class="req">Viste</label>
             <div class="chips">
               <label class="chip"><input type="checkbox" name="view" value="frontale" checked> Frontale</label>
               <label class="chip"><input type="checkbox" name="view" value="angolo" checked> Angolo</label>
@@ -270,6 +282,7 @@
               <label class="chip"><input type="checkbox" name="view" value="laterale"> Laterale</label>
             </div>
             <p class="hint">Ogni vista è una generazione. Parti da 1-2.</p>
+            <div class="field-error">Spunta almeno una vista (frontale, angolo, dettaglio o laterale).</div>
           </div>
 
           <div class="section">
@@ -514,10 +527,47 @@ function resetRender() {
   document.getElementById('renderResult').style.display = 'none';
 }
 
+function clearFieldErrors() {
+  document.querySelectorAll('#configForm .section').forEach(s => s.classList.remove('invalid'));
+  const ban = document.getElementById('configErrorBanner');
+  if (ban) { ban.classList.remove('show'); ban.innerHTML = ''; }
+}
+
+function markField(id, msg) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.add('invalid');
+  const err = el.querySelector('.field-error');
+  if (err && msg) err.textContent = msg;
+}
+
+function showConfigBanner(items) {
+  const ban = document.getElementById('configErrorBanner');
+  if (!ban) return;
+  ban.innerHTML = '<strong>Mancano questi campi:</strong><ul style="margin:8px 0 0 18px;">' +
+    items.map(t => '<li>' + t + '</li>').join('') + '</ul>';
+  ban.classList.add('show');
+  ban.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
 async function submitConfig(e) {
   e.preventDefault();
   const form = document.getElementById('configForm');
+  clearFieldErrors();
   const fd = new FormData(form);
+  const missing = [];
+  if (!fd.get('room')) {
+    markField('field-room', 'Scegli il tipo di stanza.');
+    missing.push('Tipo di stanza');
+  }
+  if (!fd.getAll('view').length) {
+    markField('field-views', 'Spunta almeno una vista.');
+    missing.push('Viste da generare');
+  }
+  if (missing.length) {
+    showConfigBanner(missing);
+    return;
+  }
   const send = new FormData();
   const clientId = document.getElementById('clientSelectConfig').value;
   if (clientId) send.append('clientId', clientId);
@@ -564,7 +614,22 @@ async function submitConfig(e) {
   } else {
     form.style.display = 'block';
     document.getElementById('configLoading').style.display = 'none';
-    alert(data.error || 'Errore');
+    const msg = data.error || 'Errore';
+    const mapped = [];
+    const blob = (msg + ' ' + JSON.stringify(data.fields || [])).toLowerCase();
+    if (blob.includes('client')) {
+      markField('field-client', 'Il server richiede ancora un cliente. Sceglilo qui oppure aggiorna models/Render.js e routes/renders.js su GitHub.');
+      mapped.push('Cliente');
+    }
+    if (blob.includes('room') || blob.includes('stanza')) {
+      markField('field-room', 'Manca il tipo di stanza.');
+      mapped.push('Tipo di stanza');
+    }
+    if (blob.includes('size') || blob.includes('taglia') || blob.includes('obbligator')) {
+      mapped.push(msg);
+    }
+    if (!mapped.length) mapped.push(msg);
+    showConfigBanner(mapped);
   }
 }
 
