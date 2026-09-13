@@ -1,7 +1,8 @@
+
 import mongoose from 'mongoose';
 
 const RenderSchema = new mongoose.Schema({
-  clientId: { type: mongoose.Schema.Types.ObjectId, ref: 'Client', required: false, index: true },
+  clientId: { type: mongoose.Schema.Types.ObjectId, ref: 'Client', required: true },
   adminId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true },
   title: { type: String, required: true },
   description: String,
@@ -16,7 +17,9 @@ const RenderSchema = new mongoose.Schema({
   displayOrder: { type: Number, default: 0 },
   isVisible: { type: Boolean, default: true },
   views: { type: Number, default: 0 },
-  metadata: mongoose.Schema.Types.Mixed
+  metadata: mongoose.Schema.Types.Mixed,
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
 }, { timestamps: true });
 
 RenderSchema.index({ clientId: 1, displayOrder: 1 });
