@@ -1,313 +1,310 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 Studio Render AI</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        :root {
-            --primary: #4CAF50;
-            --danger: #f44336;
-            --bg: #1a1a1a;
-            --bg2: #2a2a2a;
-            --border: #444;
-            --text: #fff;
-            --text-light: #aaa;
-        }
-        body { font-family: Arial, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
-        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
-        .navbar { background: var(--bg2); padding: 15px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-        .navbar h1 { color: var(--primary); font-size: 24px; }
-        .login-page { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
-        .login-box { background: var(--bg2); padding: 40px; border-radius: 8px; border: 1px solid var(--border); width: 100%; max-width: 400px; }
-        .login-box h1 { margin-bottom: 10px; color: var(--primary); text-align: center; }
-        .login-box p { text-align: center; color: var(--text-light); margin-bottom: 30px; }
-        .form-group { margin-bottom: 15px; }
-        label { display: block; margin-bottom: 5px; font-weight: 600; }
-        input, select, textarea { width: 100%; padding: 10px; background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 4px; font-family: inherit; }
-        input:focus { outline: none; border-color: var(--primary); }
-        button { padding: 10px 20px; background: var(--primary); color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; }
-        button:hover { opacity: 0.9; }
-        button.danger { background: var(--danger); }
-        .card { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 20px; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 20px; }
-        .tabs { display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 1px solid var(--border); }
-        .tab-btn { padding: 10px 20px; background: transparent; border: none; color: var(--text-light); cursor: pointer; border-bottom: 3px solid transparent; }
-        .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
-        .tab-content { display: none; }
-        .tab-content.active { display: block; }
-        .file-upload { border: 2px dashed var(--border); border-radius: 8px; padding: 40px; text-align: center; cursor: pointer; margin-bottom: 20px; }
-        .file-upload:hover { border-color: var(--primary); }
-        .info-box { background: rgba(76, 175, 80, 0.1); border-left: 4px solid var(--primary); padding: 15px; border-radius: 4px; margin-bottom: 20px; }
-        .error { color: var(--danger); margin-top: 10px; }
-        .success { color: var(--primary); margin-top: 10px; }
-        .loading { text-align: center; padding: 40px; }
-        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-        @media (max-width: 768px) { .grid-2 { grid-template-columns: 1fr; } }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Studio Render AI</title>
+<style>
+  :root {
+    --bg: #0e1116;
+    --bg2: #171c24;
+    --bg3: #212833;
+    --line: #2c3440;
+    --text: #f4f1ea;
+    --muted: #9aa3b2;
+    --accent: #c4a574;
+    --accent2: #e8d5b5;
+    --danger: #c45c4a;
+    --ok: #7d9b76;
+    --radius: 16px;
+    --font: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --sans: "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); line-height: 1.5; }
+  h1,h2,h3 { font-family: var(--font); font-weight: 500; }
+  .nav { display:flex; justify-content:space-between; align-items:center; padding:18px 28px; border-bottom:1px solid var(--line); background: rgba(14,17,22,.9); position:sticky; top:0; z-index:10; }
+  .brand { letter-spacing:.08em; text-transform:uppercase; font-size:13px; color:var(--accent); }
+  .wrap { max-width:1120px; margin:0 auto; padding:28px 20px 80px; }
+  .login-page { min-height:100vh; display:grid; place-items:center; padding:24px; }
+  .login-box { width:100%; max-width:400px; background:var(--bg2); border:1px solid var(--line); border-radius:24px; padding:36px; }
+  .card { background:var(--bg2); border:1px solid var(--line); border-radius:var(--radius); padding:22px; }
+  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; margin-bottom:22px; }
+  .stat-l { font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); }
+  .stat-n { font-family:var(--font); font-size:36px; color:var(--accent2); margin-top:4px; }
+  .tabs { display:flex; gap:6px; margin:18px 0; flex-wrap:wrap; }
+  .tab-btn { background:transparent; border:1px solid var(--line); color:var(--muted); border-radius:999px; padding:8px 16px; cursor:pointer; }
+  .tab-btn.active { background:var(--accent); color:#1a140c; border-color:var(--accent); }
+  .tab-content { display:none; }
+  .tab-content.active { display:block; }
+  label { display:block; font-size:12px; color:var(--muted); margin-bottom:6px; letter-spacing:.04em; }
+  input, select, textarea { width:100%; background:var(--bg3); border:1px solid var(--line); color:var(--text); border-radius:12px; padding:11px 12px; font:inherit; }
+  textarea { min-height:110px; resize:vertical; }
+  input[type=checkbox] { width:auto; margin-right:6px; }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; }
+  .chip { display:flex; align-items:center; gap:6px; background:var(--bg3); border:1px solid var(--line); border-radius:999px; padding:6px 12px; font-size:13px; }
+  button { background:var(--accent); color:#1a140c; border:0; border-radius:999px; padding:11px 18px; font-weight:600; cursor:pointer; }
+  button.ghost { background:transparent; color:var(--text); border:1px solid var(--line); }
+  button.danger { background:var(--danger); color:#fff; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:14px; }
+  .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  @media (max-width:800px){ .grid-2 { grid-template-columns:1fr; } }
+  .hint { color:var(--muted); font-size:12px; margin-top:6px; }
+  .error { color:#f0b4aa; margin-top:10px; }
+  .file { border:1px dashed var(--line); border-radius:14px; padding:16px; background:var(--bg3); }
+  .section { margin-bottom:18px; }
+  .room-extra { display:none; }
+  img.preview { width:100%; border-radius:14px; display:block; }
+</style>
 </head>
 <body>
 
-<!-- PAGINA LOGIN -->
 <div id="loginPage" class="login-page">
-    <div class="login-box">
-        <h1>🎨 Studio Render AI</h1>
-        <p>Interior Design + IA</p>
-        <form id="loginForm">
-            <div class="form-group">
-                <label>Nome Utente</label>
-                <input type="text" id="username" placeholder="username" required autofocus>
-            </div>
-            <div class="form-group">
-                <label>Password</label>
-                <input type="password" id="password" placeholder="password" required>
-            </div>
-            <button type="submit" style="width: 100%;">🔓 Accedi</button>
-            <div id="loginError" class="error"></div>
-        </form>
-    </div>
+  <div class="login-box">
+    <div class="brand">Studio Render</div>
+    <h1 style="margin:10px 0 8px;">Entra in studio</h1>
+    <p class="hint" style="margin-bottom:22px;">Interior design e render AI</p>
+    <form id="loginForm">
+      <div class="section"><label>Utente</label><input id="username" required autofocus></div>
+      <div class="section"><label>Password</label><input id="password" type="password" required></div>
+      <button type="submit" style="width:100%;">Accedi</button>
+      <div id="loginError" class="error"></div>
+    </form>
+  </div>
 </div>
 
-<!-- PAGINA DASHBOARD -->
-<div id="dashboardPage" style="display: none;">
-    <div class="navbar">
-        <h1>🎨 Studio Render AI</h1>
-        <button class="danger" onclick="logout()">Esci</button>
+<div id="dashboardPage" style="display:none;">
+  <div class="nav">
+    <div class="brand">Studio Render AI</div>
+    <button class="ghost" onclick="logout()">Esci</button>
+  </div>
+  <div class="wrap">
+    <div class="stats">
+      <div class="card"><div class="stat-l">Clienti</div><div class="stat-n" id="totalClients">0</div></div>
+      <div class="card"><div class="stat-l">Render</div><div class="stat-n" id="totalRenders">0</div></div>
     </div>
 
-    <div class="container">
-        <!-- STATISTICHE -->
-        <div class="grid">
-            <div class="card">
-                <div style="font-size: 12px; color: var(--text-light); text-transform: uppercase; margin-bottom: 10px;">Clienti Totali</div>
-                <div style="font-size: 32px; font-weight: bold; color: var(--primary);" id="totalClients">0</div>
-            </div>
-            <div class="card">
-                <div style="font-size: 12px; color: var(--text-light); text-transform: uppercase; margin-bottom: 10px;">Render Totali</div>
-                <div style="font-size: 32px; font-weight: bold; color: var(--primary);" id="totalRenders">0</div>
-            </div>
-        </div>
-
-        <!-- TAB PRINCIPALI -->
-        <div class="tabs">
-            <button class="tab-btn active" onclick="switchTab('clients')">👥 Clienti</button>
-            <button class="tab-btn" onclick="switchTab('viewer')">📐 Viewer</button>
-        </div>
-
-        <!-- TAB CLIENTI -->
-        <div id="clients" class="tab-content active">
-            <div class="card">
-                <button onclick="addClient()" style="margin-bottom: 20px;">➕ Nuovo Cliente</button>
-                <input type="text" id="search" placeholder="🔍 Cerca..." onkeyup="filterClients()" style="margin-bottom: 20px; width: 100%;">
-                <div id="clientsList" class="grid"></div>
-            </div>
-        </div>
-
-        <!-- TAB VIEWER -->
-        <div id="viewer" class="tab-content">
-            <div class="card">
-                <h2 style="margin-bottom: 20px;">3D Viewer & Rendering</h2>
-                
-                <div style="margin-bottom: 20px;">
-                    <label>Seleziona Cliente:</label>
-                    <select id="clientSelect" onchange="selectClient(this.value)" style="width: 100%;">
-                        <option value="">-- Seleziona --</option>
-                    </select>
-                </div>
-
-                <div class="tabs">
-                    <button class="tab-btn active" onclick="switchSubTab('upload')">📸 Upload</button>
-                    <button class="tab-btn" onclick="switchSubTab('render')">✨ Render</button>
-                    <button class="tab-btn" onclick="switchSubTab('config')">🎨 Configuratore</button>
-                </div>
-
-                <!-- SUB-TAB UPLOAD -->
-                <div id="upload" class="tab-content active">
-                    <div class="grid-2">
-                        <div>
-                            <div class="info-box">⭐ Carica Immagine (Consigliato)</div>
-                            <div class="file-upload" onclick="document.getElementById('imageFile').click();">
-                                <p style="font-size: 40px;">📸</p>
-                                <p><strong>Screenshot o Foto</strong></p>
-                                <p style="font-size: 12px;">PNG, JPG, WebP</p>
-                                <input type="file" id="imageFile" accept="image/*" style="display: none;" onchange="handleImageSelect()">
-                            </div>
-                            <div id="imagePreview" style="display: none;">
-                                <img id="previewImg" style="width: 100%; border-radius: 6px; margin-bottom: 10px;">
-                                <button onclick="analyzeImage()" style="width: 100%;">🔍 Analizza</button>
-                            </div>
-                        </div>
-                        <div>
-                            <div class="info-box">File 3D (Alternativo)</div>
-                            <div class="file-upload" onclick="document.getElementById('model3DFile').click();">
-                                <p style="font-size: 40px;">📁</p>
-                                <p><strong>File 3D</strong></p>
-                                <p style="font-size: 12px;">OBJ, GLTF, GLB, FBX</p>
-                                <input type="file" id="model3DFile" style="display: none;" onchange="handleFileSelect()">
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- SUB-TAB RENDER -->
-                <div id="render" class="tab-content">
-                    <div id="renderMessage" style="text-align: center; padding: 40px; color: var(--text-light);">
-                        Analizza un'immagine prima per generare un render
-                    </div>
-                    <div id="renderForm" style="display: none;">
-                        <div class="form-group">
-                            <label>Stile:</label>
-                            <input type="text" id="renderStyle" placeholder="Moderno, Lusso...">
-                        </div>
-                        <div class="form-group">
-                            <label>Illuminazione:</label>
-                            <select id="renderLighting">
-                                <option>Naturale</option>
-                                <option>Calda</option>
-                                <option>Fredda</option>
-                                <option>Mista</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label>Colori:</label>
-                            <input type="text" id="renderColors" placeholder="Bianco, Grigio...">
-                        </div>
-                        <button onclick="generaRender()" style="width: 100%;">🎨 Genera Render</button>
-                    </div>
-                    <div id="renderResult" style="display: none;">
-                        <img id="renderImg" style="width: 100%; border-radius: 8px; margin-bottom: 20px;">
-                        <button onclick="resetRender()" style="width: 100%;">🔄 Ricomincia</button>
-                    </div>
-                </div>
-
-                <!-- SUB-TAB CONFIGURATORE -->
-                <div id="config" class="tab-content">
-                    <form id="configForm" onsubmit="submitConfig(event)" style="display: grid; gap: 15px;">
-                        <div>
-                            <label>Tipo di Stanza:</label>
-                            <select name="room" required>
-                                <option value="salotto">Salotto</option>
-                                <option value="camera">Camera da Letto</option>
-                                <option value="cucina">Cucina</option>
-                                <option value="bagno">Bagno</option>
-                                <option value="ufficio">Ufficio</option>
-                                <option value="altro">Altro</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label>Dimensioni:</label>
-                            <select name="size" required>
-                                <option value="piccolo">Piccolo (< 20 m²)</option>
-                                <option value="medio" selected>Medio (20-50 m²)</option>
-                                <option value="grande">Grande (> 50 m²)</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label>Budget:</label>
-                            <select name="budget" required>
-                                <option value="economico">Economico</option>
-                                <option value="medio" selected>Medio</option>
-                                <option value="lusso">Lusso</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label>Stili:</label><br>
-                            <label><input type="checkbox" name="style" value="moderno" checked> Moderno</label>
-                            <label><input type="checkbox" name="style" value="classico"> Classico</label>
-                            <label><input type="checkbox" name="style" value="minimalista"> Minimalista</label>
-                            <label><input type="checkbox" name="style" value="rustico"> Rustico</label>
-                            <label><input type="checkbox" name="style" value="industriale"> Industriale</label>
-                            <label><input type="checkbox" name="style" value="lusso"> Lusso</label>
-                            <label><input type="checkbox" name="style" value="scandinavo"> Scandinavo</label>
-                            <label><input type="checkbox" name="style" value="mediterraneo"> Mediterraneo</label>
-                        </div>
-                        <div>
-                            <label>Palette colori:</label><br>
-                            <label><input type="checkbox" name="color" value="bianco gesso"> Bianco</label>
-                            <label><input type="checkbox" name="color" value="panna"> Panna</label>
-                            <label><input type="checkbox" name="color" value="greige"> Greige</label>
-                            <label><input type="checkbox" name="color" value="grigio caldo"> Grigio caldo</label>
-                            <label><input type="checkbox" name="color" value="grigio antracite"> Antracite</label>
-                            <label><input type="checkbox" name="color" value="nero soft"> Nero</label>
-                            <label><input type="checkbox" name="color" value="rovere naturale"> Rovere</label>
-                            <label><input type="checkbox" name="color" value="noce"> Noce</label>
-                            <label><input type="checkbox" name="color" value="terracotta"> Terracotta</label>
-                            <label><input type="checkbox" name="color" value="verde oliva"> Verde oliva</label>
-                            <label><input type="checkbox" name="color" value="blu petrolio"> Blu petrolio</label>
-                            <label><input type="checkbox" name="color" value="sabbia"> Sabbia</label>
-                            <div class="form-group" style="margin-top:10px;">
-                                <label>Colore personalizzato (hex o nome RAL):</label>
-                                <input type="text" name="customColor" placeholder="#C4B7A6 oppure RAL 9010">
-                            </div>
-                        </div>
-                        <div>
-                            <label>Pavimento:</label>
-                            <select name="floorFinish">
-                                <option value="parquet rovere naturale spazzolato">Parquet rovere naturale</option>
-                                <option value="parquet rovere scuro">Parquet rovere scuro</option>
-                                <option value="parquet noce canaletto">Parquet noce</option>
-                                <option value="listoni rovere sbiancato">Rovere sbiancato</option>
-                                <option value="laminato effetto legno">Laminato legno</option>
-                                <option value="piastrelle gres porcellanato effetto cemento 60x60">Gres effetto cemento</option>
-                                <option value="piastrelle gres effetto marmo calacatta">Gres effetto marmo</option>
-                                <option value="piastrelle gres effetto pietra">Gres effetto pietra</option>
-                                <option value="cotto fatto a mano">Cotto</option>
-                                <option value="microcemento continuo">Microcemento</option>
-                                <option value="moquette loop neutra">Moquette</option>
-                            </select>
-                            <input type="file" name="floorTexture" accept="image/*" style="margin-top:8px;">
-                            <small style="color:var(--text-light);">Opzionale: foto catalogo pavimento</small>
-                        </div>
-                        <div>
-                            <label>Rivestimento pareti:</label>
-                            <select name="wallFinish">
-                                <option value="pittura liscia opaca">Pittura liscia</option>
-                                <option value="pittura effetto calce">Effetto calce</option>
-                                <option value="carta da parati geometrica contemporanea">Carta da parati geometrica</option>
-                                <option value="carta da parati botanica">Carta da parati botanica</option>
-                                <option value="carta da parati tessuto lino">Carta da parati tessuto</option>
-                                <option value="boiserie legno verticale">Boiserie legno</option>
-                                <option value="rivestimento gres grande formato">Gres parete</option>
-                                <option value="rivestimento pietra naturale a lastre">Pietra naturale</option>
-                                <option value="mattone a vista bianco">Mattone bianco</option>
-                                <option value="pannelli cannettati legno">Cannettato</option>
-                            </select>
-                            <input type="file" name="wallTexture" accept="image/*" style="margin-top:8px;">
-                            <small style="color:var(--text-light);">Opzionale: foto catalogo rivestimento</small>
-                        </div>
-                        <div>
-                            <label>Viste da generare:</label><br>
-                            <label><input type="checkbox" name="view" value="frontale" checked> Frontale</label>
-                            <label><input type="checkbox" name="view" value="angolo" checked> Angolo</label>
-                            <label><input type="checkbox" name="view" value="dettaglio"> Dettaglio materiali</label>
-                            <label><input type="checkbox" name="view" value="laterale"> Laterale</label>
-                            <p style="color:var(--text-light);font-size:12px;margin-top:6px;">Ogni vista = 1 generazione AI. Poi puoi farle scorrere come short.</p>
-                        </div>
-                        <div>
-                            <label>Illuminazione:</label>
-                            <select name="lighting">
-                                <option value="naturale">Naturale</option>
-                                <option value="calda">Calda</option>
-                                <option value="fredda">Fredda</option>
-                                <option value="mista" selected>Mista</option>
-                            </select>
-                        </div>
-                        <button type="submit" style="width: 100%;">🎨 Genera viste</button>
-                    </form>
-                    <div id="configLoading" style="display: none;" class="loading">
-                        ⏳ Generazione viste in corso (può richiedere 1-2 minuti)...
-                    </div>
-                    <div id="configResult" style="display: none;">
-                        <img id="configImg" style="width: 100%; border-radius: 8px; margin-bottom: 12px;">
-                        <div id="configViewBtns" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;"></div>
-                        <button type="button" onclick="playViews()" style="width:100%;margin-bottom:8px;">▶ Short viste</button>
-                        <button type="button" onclick="resetConfig()" style="width: 100%;">🔄 Ricomincia</button>
-                    </div>
-                </div>
-            </div>
-        </div>
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('configStudio')">Configuratore</button>
+      <button class="tab-btn" onclick="switchTab('clients')">Clienti</button>
+      <button class="tab-btn" onclick="switchTab('viewer')">Da foto</button>
     </div>
+
+    <div id="configStudio" class="tab-content active">
+      <div class="card">
+        <h2 style="margin-bottom:6px;">Configuratore ambiente</h2>
+        <p class="hint" style="margin-bottom:18px;">Usabile anche senza cliente. Il cliente è facoltativo, serve solo se vuoi archiviare il render sul progetto.</p>
+        <form id="configForm" onsubmit="submitConfig(event)">
+          <div class="grid-2">
+            <div class="section">
+              <label>Cliente (facoltativo)</label>
+              <select id="clientSelectConfig" name="clientId"><option value="">— Nessun cliente —</option></select>
+            </div>
+            <div class="section">
+              <label>Tipo di stanza *</label>
+              <select name="room" id="roomType" required onchange="toggleRoomExtras()">
+                <option value="salotto">Soggiorno</option>
+                <option value="cucina">Cucina</option>
+                <option value="bagno">Bagno</option>
+                <option value="camera">Camera</option>
+                <option value="ufficio">Studio</option>
+                <option value="altro">Altro</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="section">
+            <label>Come lo immagini</label>
+            <textarea name="brief" placeholder="Es. isola al centro con cappa sospesa, cucina a L senza pensili, colonna forni a destra. Oppure: sanitari sospesi, lavabo doppio, box walk-in, rubinetteria nera opaca."></textarea>
+          </div>
+
+          <div class="grid-2">
+            <div class="section">
+              <label>Taglia indicativa</label>
+              <select name="size">
+                <option value="piccolo">Piccolo</option>
+                <option value="medio" selected>Medio</option>
+                <option value="grande">Grande</option>
+              </select>
+            </div>
+            <div class="section">
+              <label>Metri quadri esatti (facoltativo)</label>
+              <input name="sqm" type="number" min="3" step="0.1" placeholder="es. 12.5">
+            </div>
+          </div>
+
+          <div class="section">
+            <label>Pianta o schizzo PNG/JPG (facoltativo)</label>
+            <div class="file"><input type="file" name="planImage" accept="image/*"></div>
+            <p class="hint">Se carichi una pianta, il modello prova a rispettare forma e aperture.</p>
+          </div>
+
+          <div class="grid-2">
+            <div class="section">
+              <label>Stile</label>
+              <div class="chips">
+                <label class="chip"><input type="checkbox" name="style" value="moderno" checked> Moderno</label>
+                <label class="chip"><input type="checkbox" name="style" value="minimalista"> Minimal</label>
+                <label class="chip"><input type="checkbox" name="style" value="classico"> Classico</label>
+                <label class="chip"><input type="checkbox" name="style" value="scandinavo"> Nordico</label>
+                <label class="chip"><input type="checkbox" name="style" value="mediterraneo"> Mediterraneo</label>
+                <label class="chip"><input type="checkbox" name="style" value="lusso"> Lusso</label>
+              </div>
+            </div>
+            <div class="section">
+              <label>Budget</label>
+              <select name="budget">
+                <option value="economico">Essenziale</option>
+                <option value="medio" selected>Medio</option>
+                <option value="lusso">Alto</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="section">
+            <label>Colori — nomi liberi, RAL o hex. Tutto facoltativo.</label>
+            <div class="chips" style="margin-bottom:10px;">
+              <label class="chip"><input type="checkbox" name="color" value="bianco caldo"> Bianco caldo</label>
+              <label class="chip"><input type="checkbox" name="color" value="grigio topo"> Grigio topo</label>
+              <label class="chip"><input type="checkbox" name="color" value="greige"> Greige</label>
+              <label class="chip"><input type="checkbox" name="color" value="ottanio"> Ottanio</label>
+              <label class="chip"><input type="checkbox" name="color" value="sabbia"> Sabbia</label>
+              <label class="chip"><input type="checkbox" name="color" value="terracotta"> Terracotta</label>
+              <label class="chip"><input type="checkbox" name="color" value="verde oliva"> Oliva</label>
+              <label class="chip"><input type="checkbox" name="color" value="blu petrolio"> Petrolio</label>
+            </div>
+            <input name="customColor" placeholder="es. grigio topo, ottanio, RAL 7030, #8A9A5B">
+            <p class="hint">Puoi scrivere solo “grigio topo e ottanio”. Non serve conoscere il codice.</p>
+          </div>
+
+          <div class="grid-2">
+            <div class="section">
+              <label>Pavimento</label>
+              <select name="floorFinish">
+                <option value="parquet rovere naturale">Parquet rovere</option>
+                <option value="parquet noce">Parquet noce</option>
+                <option value="gres effetto cemento">Gres cemento</option>
+                <option value="gres effetto marmo">Gres marmo</option>
+                <option value="gres effetto pietra">Gres pietra</option>
+                <option value="cotto">Cotto</option>
+                <option value="microcemento">Microcemento</option>
+              </select>
+              <div class="file" style="margin-top:8px;"><input type="file" name="floorTexture" accept="image/*"></div>
+              <p class="hint">Foto catalogo pavimento, facoltativa</p>
+            </div>
+            <div class="section">
+              <label>Pareti / rivestimento</label>
+              <select name="wallFinish">
+                <option value="pittura liscia opaca">Pittura liscia</option>
+                <option value="effetto calce">Calce</option>
+                <option value="carta da parati">Carta da parati</option>
+                <option value="boiserie legno">Boiserie</option>
+                <option value="gres grande formato">Gres parete</option>
+                <option value="piastrelle bagno 60x120">Piastrelle bagno</option>
+              </select>
+              <div class="file" style="margin-top:8px;"><input type="file" name="wallTexture" accept="image/*"></div>
+              <p class="hint">Foto catalogo rivestimento, facoltativa</p>
+            </div>
+          </div>
+
+          <div id="bagnoExtra" class="section room-extra">
+            <label>Sanitari e rubinetteria</label>
+            <div class="chips">
+              <label class="chip"><input type="checkbox" name="fixture" value="sanitari sospesi"> Sanitari sospesi</label>
+              <label class="chip"><input type="checkbox" name="fixture" value="vaso e bidet a terra"> Vaso/bidet a terra</label>
+              <label class="chip"><input type="checkbox" name="fixture" value="lavabo da appoggio"> Lavabo appoggio</label>
+              <label class="chip"><input type="checkbox" name="fixture" value="lavabo doppio"> Lavabo doppio</label>
+              <label class="chip"><input type="checkbox" name="fixture" value="box walk-in"> Box walk-in</label>
+              <label class="chip"><input type="checkbox" name="fixture" value="vasca freestanding"> Vasca freestanding</label>
+              <label class="chip"><input type="checkbox" name="fixture" value="rubinetteria nera opaca"> Rubinetti neri</label>
+              <label class="chip"><input type="checkbox" name="fixture" value="rubinetteria ottone spazzolato"> Ottone</label>
+              <label class="chip"><input type="checkbox" name="fixture" value="rubinetteria cromo"> Cromo</label>
+            </div>
+          </div>
+
+          <div id="cucinaExtra" class="section room-extra">
+            <label>Elementi cucina</label>
+            <div class="chips">
+              <label class="chip"><input type="checkbox" name="fixture" value="isola centrale"> Isola</label>
+              <label class="chip"><input type="checkbox" name="fixture" value="cappa sospesa"> Cappa sospesa</label>
+              <label class="chip"><input type="checkbox" name="fixture" value="cucina a L senza pensili"> A L senza pensili</label>
+              <label class="chip"><input type="checkbox" name="fixture" value="colonna forni"> Colonna forni</label>
+              <label class="chip"><input type="checkbox" name="fixture" value="snack bar"> Snack</label>
+            </div>
+          </div>
+
+          <div class="section">
+            <label>Viste</label>
+            <div class="chips">
+              <label class="chip"><input type="checkbox" name="view" value="frontale" checked> Frontale</label>
+              <label class="chip"><input type="checkbox" name="view" value="angolo" checked> Angolo</label>
+              <label class="chip"><input type="checkbox" name="view" value="dettaglio"> Dettaglio</label>
+              <label class="chip"><input type="checkbox" name="view" value="laterale"> Laterale</label>
+            </div>
+            <p class="hint">Ogni vista è una generazione. Parti da 1-2.</p>
+          </div>
+
+          <div class="section">
+            <label>Luce</label>
+            <select name="lighting">
+              <option value="naturale">Naturale</option>
+              <option value="calda">Calda</option>
+              <option value="mista" selected>Mista</option>
+              <option value="fredda">Fredda</option>
+            </select>
+          </div>
+
+          <button type="submit" style="width:100%;">Genera viste</button>
+        </form>
+
+        <div id="configLoading" style="display:none; padding:28px; text-align:center; color:var(--muted);">Generazione in corso, anche 1-2 minuti…</div>
+        <div id="configResult" style="display:none; margin-top:18px;">
+          <img id="configImg" class="preview" alt="render">
+          <div id="configViewBtns" class="chips" style="margin:12px 0;"></div>
+          <button type="button" class="ghost" onclick="playViews()">Short viste</button>
+          <button type="button" class="ghost" onclick="resetConfig()">Nuova configurazione</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="clients" class="tab-content">
+      <div class="card">
+        <button onclick="addClient()" style="margin-bottom:14px;">Nuovo cliente</button>
+        <input id="search" placeholder="Cerca" onkeyup="filterClients()" style="margin-bottom:14px;">
+        <div id="clientsList" class="grid"></div>
+      </div>
+    </div>
+
+    <div id="viewer" class="tab-content">
+      <div class="card">
+        <h2 style="margin-bottom:14px;">Da una foto esistente</h2>
+        <div class="section">
+          <label>Cliente (qui serve, per salvare l’analisi sul progetto)</label>
+          <select id="clientSelect" onchange="selectClient(this.value)"><option value="">— Seleziona —</option></select>
+        </div>
+        <div class="file" onclick="document.getElementById('imageFile').click();">
+          <p>Carica foto ambiente</p>
+          <input type="file" id="imageFile" accept="image/*" style="display:none" onchange="handleImageSelect()">
+        </div>
+        <div id="imagePreview" style="display:none; margin-top:14px;">
+          <img id="previewImg" class="preview">
+          <button onclick="analyzeImage()" style="margin-top:12px;width:100%;">Analizza e prepara render</button>
+        </div>
+        <div id="renderForm" style="display:none; margin-top:16px;">
+          <div class="section"><label>Stile</label><input id="renderStyle"></div>
+          <div class="section"><label>Luce</label>
+            <select id="renderLighting"><option>Naturale</option><option>Calda</option><option>Mista</option></select>
+          </div>
+          <div class="section"><label>Colori (nomi liberi)</label><input id="renderColors" placeholder="ottanio, grigio topo"></div>
+          <button onclick="generaRender()" style="width:100%;">Genera render</button>
+        </div>
+        <div id="renderResult" style="display:none; margin-top:16px;">
+          <img id="renderImg" class="preview">
+          <button class="ghost" onclick="resetRender()" style="margin-top:12px;">Ricomincia</button>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -315,326 +312,242 @@ let token = localStorage.getItem('token');
 let currentClient = null;
 let currentImage = null;
 let currentAnalysis = null;
-
-// LOGIN
-document.getElementById('loginForm').onsubmit = async (e) => {
-    e.preventDefault();
-    const username = document.getElementById('username').value;
-    const password = document.getElementById('password').value;
-    
-    const res = await fetch('/api/admin/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
-    });
-    
-    const data = await res.json();
-    if (data.success) {
-        token = data.data.token;
-        localStorage.setItem('token', token);
-        document.getElementById('loginPage').style.display = 'none';
-        document.getElementById('dashboardPage').style.display = 'block';
-        loadStats();
-        loadClients();
-    } else {
-        document.getElementById('loginError').textContent = '❌ ' + data.error;
-    }
-};
-
-// LOGOUT
-function logout() {
-    localStorage.removeItem('token');
-    location.reload();
-}
-
-// LOAD STATS
-async function loadStats() {
-    const res = await fetch('/api/admin/stats', {
-        headers: { 'Authorization': `Bearer ${token}` }
-    });
-    const data = await res.json();
-    if (data.success) {
-        document.getElementById('totalClients').textContent = data.data.totalClients || 0;
-        document.getElementById('totalRenders').textContent = data.data.totalRenders || 0;
-    }
-}
-
-// LOAD CLIENTS
-async function loadClients() {
-    const res = await fetch('/api/clients', {
-        headers: { 'Authorization': `Bearer ${token}` }
-    });
-    const data = await res.json();
-    if (data.success) {
-        const clientsList = document.getElementById('clientsList');
-        clientsList.innerHTML = '';
-        const select = document.getElementById('clientSelect');
-        select.innerHTML = '<option value="">-- Seleziona --</option>';
-        
-        data.data.clients.forEach(c => {
-            const card = document.createElement('div');
-            card.className = 'card';
-            card.innerHTML = `
-                <h3>${c.name}</h3>
-                <p style="color: var(--text-light);">${c.email || 'Nessuna email'}</p>
-                <p style="color: var(--text-light);">${c.projectName || 'Nessun progetto'}</p>
-                <button data-id="${c._id}" onclick="selectClient(this.dataset.id); switchTab('viewer');" style="width: 48%; margin-right: 2%;">👁️ Visualizza</button>
-                <button data-id="${c._id}" onclick="deleteClient(this.dataset.id)" class="danger" style="width: 48%;">🗑️ Elimina</button>
-            `;
-            clientsList.appendChild(card);
-            
-            const option = document.createElement('option');
-            option.value = c._id;
-            option.textContent = c.name;
-            select.appendChild(option);
-        });
-    }
-}
-
-// ADD CLIENT
-function addClient() {
-    const name = prompt('Nome cliente:');
-    if (!name) return;
-    const email = prompt('Email:');
-    
-    fetch('/api/clients', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email: email || '' })
-    }).then(r => r.json()).then(d => {
-        if (d.success) {
-            loadClients();
-            loadStats();
-        }
-    });
-}
-
-// DELETE CLIENT
-function deleteClient(id) {
-    if (!confirm('Sei sicuro di voler eliminare questo cliente?')) return;
-    
-    fetch(`/api/clients/${id}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
-    }).then(r => r.json()).then(d => {
-        if (d.success) {
-            loadClients();
-            loadStats();
-        }
-    });
-}
-
-// SELECT CLIENT
-function selectClient(id) {
-    currentClient = id || document.getElementById('clientSelect').value || null;
-    if (currentClient) {
-        document.getElementById('clientSelect').value = currentClient;
-    }
-}
-
-// FILTER CLIENTS
-function filterClients() {
-    const search = document.getElementById('search').value.toLowerCase();
-    document.querySelectorAll('#clientsList .card').forEach(c => {
-        c.style.display = c.textContent.toLowerCase().includes(search) ? 'block' : 'none';
-    });
-}
-
-// SWITCH TAB
-function switchTab(tab) {
-    document.querySelectorAll('#clients, #viewer').forEach(e => e.classList.remove('active'));
-    document.querySelectorAll('.tabs > .tab-btn').forEach(b => b.classList.remove('active'));
-    document.getElementById(tab).classList.add('active');
-    event.target.classList.add('active');
-}
-
-function switchSubTab(tab) {
-    document.querySelectorAll('#upload, #render, #config').forEach(e => e.classList.remove('active'));
-    document.querySelectorAll('#viewer .tabs > .tab-btn').forEach(b => b.classList.remove('active'));
-    document.getElementById(tab).classList.add('active');
-    event.target.classList.add('active');
-}
-
-// HANDLE IMAGE SELECT
-function handleImageSelect() {
-    const file = document.getElementById('imageFile').files[0];
-    if (file) {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            document.getElementById('previewImg').src = e.target.result;
-            document.getElementById('imagePreview').style.display = 'block';
-            currentImage = file;
-        };
-        reader.readAsDataURL(file);
-    }
-}
-
-// ANALYZE IMAGE
-async function analyzeImage() {
-    if (!currentImage || !currentClient) {
-        alert('❌ Seleziona immagine e cliente');
-        return;
-    }
-
-    const fd = new FormData();
-    fd.append('image', currentImage);
-
-    const res = await fetch('/api/renders/analyze-image', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
-        body: fd
-    });
-
-    const data = await res.json();
-    if (data.success) {
-        currentAnalysis = data.data.analysis;
-        document.getElementById('renderMessage').style.display = 'none';
-        document.getElementById('renderForm').style.display = 'block';
-        alert('✅ Immagine analizzata!');
-    } else {
-        alert('❌ Errore: ' + data.error);
-    }
-}
-
-// GENERATE RENDER
-async function generaRender() {
-    if (!currentAnalysis) {
-        alert('❌ Analizza un\'immagine prima');
-        return;
-    }
-
-    const res = await fetch('/api/renders/generate-render', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            clientId: currentClient,
-            analysis: currentAnalysis,
-            style: document.getElementById('renderStyle').value,
-            lighting: document.getElementById('renderLighting').value,
-            colors: document.getElementById('renderColors').value
-        })
-    });
-
-    const data = await res.json();
-    if (data.success) {
-        document.getElementById('renderImg').src = data.data.renderUrl;
-        document.getElementById('renderForm').style.display = 'none';
-        document.getElementById('renderResult').style.display = 'block';
-        loadStats();
-    } else {
-        alert('❌ Errore: ' + data.error);
-    }
-}
-
-function resetRender() {
-    currentAnalysis = null;
-    currentImage = null;
-    document.getElementById('renderForm').style.display = 'none';
-    document.getElementById('renderResult').style.display = 'none';
-    document.getElementById('renderMessage').style.display = 'block';
-}
-
-// SUBMIT CONFIG
 let configViews = [];
 let viewTimer = null;
 
+function toggleRoomExtras() {
+  const room = document.getElementById('roomType').value;
+  document.getElementById('bagnoExtra').style.display = room === 'bagno' ? 'block' : 'none';
+  document.getElementById('cucinaExtra').style.display = room === 'cucina' ? 'block' : 'none';
+}
+
+document.getElementById('loginForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const res = await fetch('/api/admin/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      username: document.getElementById('username').value,
+      password: document.getElementById('password').value
+    })
+  });
+  const data = await res.json();
+  if (data.success) {
+    token = data.data.token;
+    localStorage.setItem('token', token);
+    document.getElementById('loginPage').style.display = 'none';
+    document.getElementById('dashboardPage').style.display = 'block';
+    loadStats(); loadClients();
+  } else {
+    document.getElementById('loginError').textContent = data.error || 'Accesso non riuscito';
+  }
+};
+
+function logout() { localStorage.removeItem('token'); location.reload(); }
+
+async function loadStats() {
+  const res = await fetch('/api/admin/stats', { headers: { Authorization: 'Bearer ' + token } });
+  const data = await res.json();
+  if (data.success) {
+    document.getElementById('totalClients').textContent = data.data.totalClients || 0;
+    document.getElementById('totalRenders').textContent = data.data.totalRenders || 0;
+  }
+}
+
+function fillClientSelects(clients) {
+  const opts = '<option value="">— Nessun cliente —</option>' +
+    clients.map(c => `<option value="${c._id}">${c.name}</option>`).join('');
+  const optsReq = '<option value="">— Seleziona —</option>' +
+    clients.map(c => `<option value="${c._id}">${c.name}</option>`).join('');
+  document.getElementById('clientSelectConfig').innerHTML = opts;
+  document.getElementById('clientSelect').innerHTML = optsReq;
+}
+
+async function loadClients() {
+  const res = await fetch('/api/clients', { headers: { Authorization: 'Bearer ' + token } });
+  const data = await res.json();
+  if (!data.success) return;
+  fillClientSelects(data.data.clients);
+  const list = document.getElementById('clientsList');
+  list.innerHTML = '';
+  data.data.clients.forEach(c => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `<h3>${c.name}</h3><p class="hint">${c.email || ''}</p>
+      <button class="ghost" data-id="${c._id}" onclick="selectClient(this.dataset.id); switchTab('viewer');">Apri</button>
+      <button class="danger" data-id="${c._id}" onclick="deleteClient(this.dataset.id)">Elimina</button>`;
+    list.appendChild(card);
+  });
+}
+
+function addClient() {
+  const name = prompt('Nome cliente');
+  if (!name) return;
+  const email = prompt('Email (facoltativa)') || '';
+  fetch('/api/clients', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, email })
+  }).then(r => r.json()).then(() => { loadClients(); loadStats(); });
+}
+
+function deleteClient(id) {
+  if (!confirm('Eliminare il cliente?')) return;
+  fetch('/api/clients/' + id, { method: 'DELETE', headers: { Authorization: 'Bearer ' + token } })
+    .then(r => r.json()).then(() => { loadClients(); loadStats(); });
+}
+
+function selectClient(id) {
+  currentClient = id || document.getElementById('clientSelect').value || null;
+  if (currentClient) document.getElementById('clientSelect').value = currentClient;
+}
+
+function filterClients() {
+  const q = document.getElementById('search').value.toLowerCase();
+  document.querySelectorAll('#clientsList .card').forEach(c => {
+    c.style.display = c.textContent.toLowerCase().includes(q) ? 'block' : 'none';
+  });
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('#configStudio, #clients, #viewer').forEach(e => e.classList.remove('active'));
+  document.querySelectorAll('.wrap > .tabs > .tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(tab).classList.add('active');
+  if (event && event.target) event.target.classList.add('active');
+}
+
+function handleImageSelect() {
+  const file = document.getElementById('imageFile').files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    document.getElementById('previewImg').src = e.target.result;
+    document.getElementById('imagePreview').style.display = 'block';
+    currentImage = file;
+  };
+  reader.readAsDataURL(file);
+}
+
+async function analyzeImage() {
+  if (!currentImage || !currentClient) { alert('Seleziona cliente e foto'); return; }
+  const fd = new FormData();
+  fd.append('image', currentImage);
+  const res = await fetch('/api/renders/analyze-image', {
+    method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: fd
+  });
+  const data = await res.json();
+  if (data.success) {
+    currentAnalysis = data.data.analysis;
+    document.getElementById('renderForm').style.display = 'block';
+    alert('Analisi pronta');
+  } else alert(data.error || 'Errore analisi');
+}
+
+async function generaRender() {
+  if (!currentAnalysis) return;
+  const res = await fetch('/api/renders/generate-render', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      clientId: currentClient,
+      analysis: currentAnalysis,
+      style: document.getElementById('renderStyle').value,
+      lighting: document.getElementById('renderLighting').value,
+      colors: document.getElementById('renderColors').value
+    })
+  });
+  const data = await res.json();
+  if (data.success) {
+    document.getElementById('renderImg').src = data.data.renderUrl;
+    document.getElementById('renderForm').style.display = 'none';
+    document.getElementById('renderResult').style.display = 'block';
+    loadStats();
+  } else alert(data.error || 'Errore render');
+}
+
+function resetRender() {
+  currentAnalysis = null; currentImage = null;
+  document.getElementById('renderForm').style.display = 'none';
+  document.getElementById('renderResult').style.display = 'none';
+}
+
 async function submitConfig(e) {
-    e.preventDefault();
-    if (!currentClient) {
-        alert('❌ Seleziona cliente');
-        return;
-    }
+  e.preventDefault();
+  const form = document.getElementById('configForm');
+  const fd = new FormData(form);
+  const send = new FormData();
+  const clientId = document.getElementById('clientSelectConfig').value;
+  if (clientId) send.append('clientId', clientId);
+  send.append('roomType', fd.get('room'));
+  send.append('size', fd.get('size') || 'medio');
+  send.append('sqm', fd.get('sqm') || '');
+  send.append('brief', fd.get('brief') || '');
+  send.append('budget', fd.get('budget'));
+  send.append('lighting', fd.get('lighting') || 'mista');
+  send.append('floorFinish', fd.get('floorFinish') || '');
+  send.append('wallFinish', fd.get('wallFinish') || '');
+  send.append('customColor', fd.get('customColor') || '');
+  send.append('styles', JSON.stringify(fd.getAll('style')));
+  send.append('colors', JSON.stringify(fd.getAll('color')));
+  send.append('views', JSON.stringify(fd.getAll('view')));
+  send.append('fixtures', JSON.stringify(fd.getAll('fixture')));
+  const floor = form.querySelector('[name="floorTexture"]').files[0];
+  const wall = form.querySelector('[name="wallTexture"]').files[0];
+  const plan = form.querySelector('[name="planImage"]').files[0];
+  if (floor) send.append('floorTexture', floor);
+  if (wall) send.append('wallTexture', wall);
+  if (plan) send.append('planImage', plan);
 
-    const form = document.getElementById('configForm');
-    const fd = new FormData(form);
-    const send = new FormData();
-    send.append('clientId', currentClient);
-    send.append('roomType', fd.get('room'));
-    send.append('size', fd.get('size'));
-    send.append('budget', fd.get('budget'));
-    send.append('lighting', fd.get('lighting') || 'naturale');
-    send.append('floorFinish', fd.get('floorFinish') || '');
-    send.append('wallFinish', fd.get('wallFinish') || '');
-    send.append('customColor', fd.get('customColor') || '');
-    send.append('styles', JSON.stringify(fd.getAll('style')));
-    send.append('colors', JSON.stringify(fd.getAll('color')));
-    send.append('views', JSON.stringify(fd.getAll('view')));
-    const floor = form.querySelector('[name="floorTexture"]').files[0];
-    const wall = form.querySelector('[name="wallTexture"]').files[0];
-    if (floor) send.append('floorTexture', floor);
-    if (wall) send.append('wallTexture', wall);
-
-    form.style.display = 'none';
-    document.getElementById('configLoading').style.display = 'block';
-
-    const res = await fetch('/api/renders/configure-environment', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
-        body: send
+  form.style.display = 'none';
+  document.getElementById('configLoading').style.display = 'block';
+  const res = await fetch('/api/renders/configure-environment', {
+    method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: send
+  });
+  const data = await res.json();
+  if (data.success) {
+    configViews = data.data.views?.length ? data.data.views : [{ view: 'frontale', renderUrl: data.data.renderUrl }];
+    showView(0);
+    const btns = document.getElementById('configViewBtns');
+    btns.innerHTML = '';
+    configViews.forEach((v, i) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'ghost'; b.textContent = v.view;
+      b.onclick = () => showView(i); btns.appendChild(b);
     });
-
-    const data = await res.json();
-    if (data.success) {
-        configViews = data.data.views && data.data.views.length
-            ? data.data.views
-            : [{ view: 'frontale', renderUrl: data.data.renderUrl }];
-        showView(0);
-        const btns = document.getElementById('configViewBtns');
-        btns.innerHTML = '';
-        configViews.forEach((v, i) => {
-            const b = document.createElement('button');
-            b.type = 'button';
-            b.textContent = v.view;
-            b.onclick = () => showView(i);
-            btns.appendChild(b);
-        });
-        document.getElementById('configLoading').style.display = 'none';
-        document.getElementById('configResult').style.display = 'block';
-        loadStats();
-    } else {
-        form.style.display = 'grid';
-        document.getElementById('configLoading').style.display = 'none';
-        alert('❌ Errore: ' + data.error);
-    }
+    document.getElementById('configLoading').style.display = 'none';
+    document.getElementById('configResult').style.display = 'block';
+    loadStats();
+  } else {
+    form.style.display = 'block';
+    document.getElementById('configLoading').style.display = 'none';
+    alert(data.error || 'Errore');
+  }
 }
 
 function showView(i) {
-    const v = configViews[i];
-    if (v) document.getElementById('configImg').src = v.renderUrl;
+  const v = configViews[i];
+  if (v) document.getElementById('configImg').src = v.renderUrl;
 }
-
 function playViews() {
-    if (!configViews.length) return;
-    let i = 0;
-    if (viewTimer) clearInterval(viewTimer);
-    showView(0);
-    viewTimer = setInterval(() => {
-        i = (i + 1) % configViews.length;
-        showView(i);
-    }, 1600);
+  if (!configViews.length) return;
+  let i = 0;
+  if (viewTimer) clearInterval(viewTimer);
+  viewTimer = setInterval(() => { i = (i + 1) % configViews.length; showView(i); }, 1600);
 }
-
 function resetConfig() {
-    if (viewTimer) clearInterval(viewTimer);
-    configViews = [];
-    document.getElementById('configForm').reset();
-    document.getElementById('configForm').style.display = 'grid';
-    document.getElementById('configResult').style.display = 'none';
+  if (viewTimer) clearInterval(viewTimer);
+  configViews = [];
+  document.getElementById('configForm').reset();
+  document.getElementById('configForm').style.display = 'block';
+  document.getElementById('configResult').style.display = 'none';
+  toggleRoomExtras();
 }
 
-// HANDLE FILE SELECT
-function handleFileSelect() {
-    alert('Supporto 3D disponibile a breve!');
-}
-
-// INIT
 if (token) {
-    document.getElementById('loginPage').style.display = 'none';
-    document.getElementById('dashboardPage').style.display = 'block';
-    loadStats();
-    loadClients();
+  document.getElementById('loginPage').style.display = 'none';
+  document.getElementById('dashboardPage').style.display = 'block';
+  loadStats(); loadClients();
 }
 </script>
-
 </body>
 </html>
