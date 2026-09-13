@@ -86,6 +86,7 @@
 
     <div class="tabs">
       <button class="tab-btn active" onclick="switchTab('configStudio')">Configuratore</button>
+      <button class="tab-btn" onclick="switchTab('archive')">Archivio</button>
       <button class="tab-btn" onclick="switchTab('clients')">Clienti</button>
       <button class="tab-btn" onclick="switchTab('viewer')">Da foto</button>
     </div>
@@ -288,9 +289,19 @@
         <div id="configResult" style="display:none; margin-top:18px;">
           <img id="configImg" class="preview" alt="render">
           <div id="configViewBtns" class="chips" style="margin:12px 0;"></div>
+          <button type="button" id="downloadCurrentBtn" onclick="downloadCurrentView()">Download HQ</button>
           <button type="button" class="ghost" onclick="playViews()">Short viste</button>
           <button type="button" class="ghost" onclick="resetConfig()">Nuova configurazione</button>
         </div>
+      </div>
+    </div>
+
+    <div id="archive" class="tab-content">
+      <div class="card">
+        <h2 style="margin-bottom:8px;">Archivio render</h2>
+        <p class="hint" style="margin-bottom:16px;">Tutti i render salvati. Scaricali in PNG. Su Railway i file spariscono al redeploy: scarica subito quelli importanti.</p>
+        <button class="ghost" type="button" onclick="loadArchive()" style="margin-bottom:14px;">Aggiorna</button>
+        <div id="archiveList" class="grid"></div>
       </div>
     </div>
 
@@ -327,6 +338,7 @@
         </div>
         <div id="renderResult" style="display:none; margin-top:16px;">
           <img id="renderImg" class="preview">
+          <button onclick="downloadRender(window.lastPhotoRenderId, 'render-foto-HQ.png')" style="margin-top:12px;">Download HQ</button>
           <button class="ghost" onclick="resetRender()" style="margin-top:12px;">Ricomincia</button>
         </div>
       </div>
@@ -341,6 +353,7 @@ let currentImage = null;
 let currentAnalysis = null;
 let configViews = [];
 let viewTimer = null;
+let currentViewIndex = 0;
 
 function toggleRoomExtras() {
   const room = document.getElementById('roomType').value;
@@ -364,7 +377,7 @@ document.getElementById('loginForm').onsubmit = async (e) => {
     localStorage.setItem('token', token);
     document.getElementById('loginPage').style.display = 'none';
     document.getElementById('dashboardPage').style.display = 'block';
-    loadStats(); loadClients();
+    loadStats(); loadClients(); loadArchive();
   } else {
     document.getElementById('loginError').textContent = data.error || 'Accesso non riuscito';
   }
@@ -437,10 +450,11 @@ function filterClients() {
 }
 
 function switchTab(tab) {
-  document.querySelectorAll('#configStudio, #clients, #viewer').forEach(e => e.classList.remove('active'));
+  document.querySelectorAll('#configStudio, #archive, #clients, #viewer').forEach(e => e.classList.remove('active'));
   document.querySelectorAll('.wrap > .tabs > .tab-btn').forEach(b => b.classList.remove('active'));
   document.getElementById(tab).classList.add('active');
   if (event && event.target) event.target.classList.add('active');
+  if (tab === 'archive') loadArchive();
 }
 
 function handleImageSelect() {
@@ -488,7 +502,9 @@ async function generaRender() {
     document.getElementById('renderImg').src = data.data.renderUrl;
     document.getElementById('renderForm').style.display = 'none';
     document.getElementById('renderResult').style.display = 'block';
+    window.lastPhotoRenderId = data.data.renderId;
     loadStats();
+    loadArchive();
   } else alert(data.error || 'Errore render');
 }
 
@@ -544,6 +560,7 @@ async function submitConfig(e) {
     document.getElementById('configLoading').style.display = 'none';
     document.getElementById('configResult').style.display = 'block';
     loadStats();
+    loadArchive();
   } else {
     form.style.display = 'block';
     document.getElementById('configLoading').style.display = 'none';
@@ -552,8 +569,59 @@ async function submitConfig(e) {
 }
 
 function showView(i) {
+  currentViewIndex = i;
   const v = configViews[i];
   if (v) document.getElementById('configImg').src = v.renderUrl;
+}
+
+async function downloadRender(id, filename) {
+  if (!id) { alert('Render non salvato'); return; }
+  const res = await fetch('/api/renders/file/' + id, { headers: { Authorization: 'Bearer ' + token } });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    alert(err.error || 'Download non disponibile');
+    return;
+  }
+  const blob = await res.blob();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename || 'render-HQ.png';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function downloadCurrentView() {
+  const v = configViews[currentViewIndex];
+  if (!v) return;
+  downloadRender(v.renderId, `render-${v.view || 'vista'}-HQ.png`);
+}
+
+async function loadArchive() {
+  const box = document.getElementById('archiveList');
+  if (!box) return;
+  const res = await fetch('/api/renders', { headers: { Authorization: 'Bearer ' + token } });
+  const data = await res.json();
+  if (!data.success) { box.innerHTML = '<p class="hint">Archivio non disponibile</p>'; return; }
+  if (!data.data.length) { box.innerHTML = '<p class="hint">Nessun render salvato ancora.</p>'; return; }
+  box.innerHTML = '';
+  data.data.forEach(r => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    const when = r.createdAt ? new Date(r.createdAt).toLocaleString('it-IT') : '';
+    card.innerHTML = `
+      <img src="${r.imageUrl}" class="preview" alt="" style="margin-bottom:10px;">
+      <h3>${r.title || 'Render'}</h3>
+      <p class="hint">${r.room || ''} ${when}</p>
+      <button type="button" data-id="${r._id}" onclick="downloadRender(this.dataset.id, 'render-HQ.png')">Download HQ</button>
+      <button type="button" class="danger" data-id="${r._id}" onclick="deleteRender(this.dataset.id)">Elimina</button>`;
+    box.appendChild(card);
+  });
+}
+
+async function deleteRender(id) {
+  if (!confirm('Eliminare questo render?')) return;
+  await fetch('/api/renders/' + id, { method: 'DELETE', headers: { Authorization: 'Bearer ' + token } });
+  loadArchive(); loadStats();
 }
 function playViews() {
   if (!configViews.length) return;
@@ -573,7 +641,7 @@ function resetConfig() {
 if (token) {
   document.getElementById('loginPage').style.display = 'none';
   document.getElementById('dashboardPage').style.display = 'block';
-  loadStats(); loadClients();
+  loadStats(); loadClients(); loadArchive();
 }
 </script>
 </body>
