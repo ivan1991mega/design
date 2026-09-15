@@ -505,8 +505,125 @@ function parseObjSummary(text, mtlText) {
     missingMaps,
     floorGuess,
     wallGuess,
-    note: [bathNote, mapNote, layoutLock ? 'Aperture e orientamento bloccati sul modello.' : ''].filter(Boolean).join(' ')
+    note: [bathNote, mapNote, layoutLock ? 'Aperture, sanitari e arredi bloccati sul modello.' : ''].filter(Boolean).join(' ')
   };
+}
+
+function pngChunk(type, data) {
+  const len = Buffer.alloc(4);
+  len.writeUInt32BE(data.length);
+  const payload = Buffer.concat([Buffer.from(type), data]);
+  const c = Buffer.alloc(4);
+  c.writeUInt32BE(crc32(payload));
+  return Buffer.concat([len, payload, c]);
+}
+
+function encodePng(width, height, rgb) {
+  const raw = Buffer.alloc((width * 3 + 1) * height);
+  for (let y = 0; y < height; y++) {
+    raw[y * (width * 3 + 1)] = 0;
+    rgb.copy(raw, y * (width * 3 + 1) + 1, y * width * 3, (y + 1) * width * 3);
+  }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8; ihdr[9] = 2;
+  const sig = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  return Buffer.concat([
+    sig,
+    pngChunk('IHDR', ihdr),
+    pngChunk('IDAT', zlib.deflateSync(raw)),
+    pngChunk('IEND', Buffer.alloc(0))
+  ]);
+}
+
+function colorForPart(name, role, type) {
+  const n = normName(name + ' ' + (type || '') + ' ' + (role || ''));
+  if (/(finestra|window)/.test(n)) return [0, 170, 210];
+  if (/(porta|door)/.test(n)) return [140, 90, 50];
+  if (/(doccia|shower)/.test(n)) return [40, 90, 190];
+  if (/(lavabo|sink|catino)/.test(n)) return [230, 200, 150];
+  if (/(bidet)/.test(n)) return [210, 210, 230];
+  if (/(wc|cassetta|sospesi|toilet|vaso)/.test(n)) return [250, 250, 250];
+  if (/(scrivania|desk)/.test(n)) return [150, 110, 70];
+  return [170, 170, 175];
+}
+
+function surveyPng(mesh) {
+  const W = 900;
+  const H = 1100;
+  const rgb = Buffer.alloc(W * H * 3, 236);
+  const set = (x, y, r, g, b) => {
+    if (x < 0 || y < 0 || x >= W || y >= H) return;
+    const i = (y * W + x) * 3;
+    rgb[i] = r; rgb[i + 1] = g; rgb[i + 2] = b;
+  };
+  const fill = (x0, y0, x1, y1, r, g, b) => {
+    const xa = Math.max(0, Math.min(W, Math.round(Math.min(x0, x1))));
+    const xb = Math.max(0, Math.min(W, Math.round(Math.max(x0, x1))));
+    const ya = Math.max(0, Math.min(H, Math.round(Math.min(y0, y1))));
+    const yb = Math.max(0, Math.min(H, Math.round(Math.max(y0, y1))));
+    for (let y = ya; y < yb; y++) for (let x = xa; x < xb; x++) set(x, y, r, g, b);
+  };
+  const stroke = (x0, y0, x1, y1, t, r, g, b) => {
+    fill(x0, y0, x1, y0 + t, r, g, b);
+    fill(x0, y1 - t, x1, y1, r, g, b);
+    fill(x0, y0, x0 + t, y1, r, g, b);
+    fill(x1 - t, y0, x1, y1, r, g, b);
+  };
+
+  const bw = mesh.bbox?.width || 300;
+  const bd = mesh.bbox?.depth || 300;
+  const bh = mesh.bbox?.height || 270;
+  const left = 70;
+  const top = 60;
+  const planW = 760;
+  const planH = 620;
+  const scale = Math.min(planW / Math.max(bw, 1), planH / Math.max(bd, 1));
+  const ox = left + (planW - bw * scale) / 2;
+  const oy = top + (planH - bd * scale) / 2;
+  const X = (cm) => ox + cm * scale;
+  const Z = (cm) => oy + cm * scale;
+
+  fill(X(0), Z(0), X(bw), Z(bd), 250, 248, 242);
+  stroke(X(0), Z(0), X(bw), Z(bd), 6, 40, 40, 45);
+
+  for (const a of (mesh.openings || [])) {
+    const c = colorForPart(a.name, a.role, a.type);
+    fill(X(a.fromX), Z(a.fromZ || 0), X(a.fromX + a.sizeX), Z((a.fromZ || 0) + a.sizeZ), c[0], c[1], c[2]);
+  }
+  for (const a of (mesh.placed || [])) {
+    const c = colorForPart(a.name, a.role);
+    fill(X(a.fromX), Z(a.fromZ), X(a.fromX + Math.max(a.sizeX, 8)), Z(a.fromZ + Math.max(a.sizeZ, 8)), c[0], c[1], c[2]);
+  }
+
+  const camX = X(bw / 2);
+  const camY = Z(bd) + 18;
+  fill(camX - 14, camY, camX + 14, camY + 10, 200, 50, 40);
+  fill(camX - 8, Z(bd) - 28, camX + 8, Z(bd) - 4, 200, 50, 40);
+
+  const elevTop = 720;
+  const eScale = Math.min(760 / Math.max(bw, 1), 280 / Math.max(bh, 1));
+  const eox = 70 + (760 - bw * eScale) / 2;
+  const eoy = elevTop;
+  fill(eox, eoy, eox + bw * eScale, eoy + bh * eScale, 248, 246, 240);
+  stroke(eox, eoy, eox + bw * eScale, eoy + bh * eScale, 5, 40, 40, 45);
+  const win = (mesh.openings || []).filter((a) => a.type === 'finestra')[0];
+  if (win) {
+    const wx = eox + (win.fromX || 0) * eScale;
+    const wy = eoy + (bh - ((win.sill || 0) + win.height)) * eScale;
+    fill(wx, wy, wx + win.width * eScale, wy + win.height * eScale, 0, 170, 210);
+    stroke(wx, wy, wx + win.width * eScale, wy + win.height * eScale, 3, 20, 80, 110);
+  }
+
+  fill(70, 1020, 110, 1055, 0, 170, 210);
+  fill(200, 1020, 240, 1055, 40, 90, 190);
+  fill(330, 1020, 370, 1055, 230, 200, 150);
+  fill(460, 1020, 500, 1055, 250, 250, 250);
+  fill(590, 1020, 630, 1055, 210, 210, 230);
+  fill(720, 1020, 760, 1055, 200, 50, 40);
+
+  return encodePng(W, H, rgb);
 }
 
 function parseMtl(text) {
@@ -982,6 +1099,18 @@ Scrivi in italiano: tipo stanza, quale parete ha la finestra, quale ha la porta,
       }
     }
 
+    let planImage = null;
+    if (mesh && (mesh.placed?.length || mesh.openings?.length)) {
+      try {
+        await fs.mkdir(UPLOADS_DIR, { recursive: true });
+        planImage = `plan-${Date.now()}.png`;
+        await fs.writeFile(path.join(UPLOADS_DIR, planImage), surveyPng(mesh));
+        mesh.planImage = planImage;
+      } catch (err) {
+        console.error('plan png', err.message);
+      }
+    }
+
     const suggested = mesh ? {
       roomType: mesh.suggestedRoom || 'altro',
       fixtures: mesh.fixtures || [],
@@ -991,6 +1120,7 @@ Scrivi in italiano: tipo stanza, quale parete ha la finestra, quale ha la porta,
       note: mesh.note || '',
       layoutLock: mesh.layoutLock || '',
       openings: mesh.openings || [],
+      planImage,
       textureRefs
     } : null;
 
@@ -1001,6 +1131,8 @@ Scrivi in italiano: tipo stanza, quale parete ha la finestra, quale ha la porta,
         mesh,
         suggested,
         textureRefs,
+        planImage,
+        planUrl: planImage ? `/api/renders/media/${planImage}` : null,
         sourceImage: imageFile ? imageFile.filename : null,
         sourceModel: modelFile ? modelFile.filename : null
       }
@@ -1012,13 +1144,20 @@ Scrivi in italiano: tipo stanza, quale parete ha la finestra, quale ha la porta,
 
 router.post('/generate-render', async (req, res, next) => {
   try {
-    const { clientId, analysis, style, lighting, colors, sourceImage, modelBrief, roomType, floorFinish, wallFinish, fixtures, textureRefs, layoutLock } = req.body;
+    const { clientId, analysis, style, lighting, colors, sourceImage, modelBrief, roomType, floorFinish, wallFinish, fixtures, textureRefs, layoutLock, planImage } = req.body;
     if (!analysis) {
       return res.status(400).json({ success: false, error: 'Manca l\'analisi del file' });
     }
 
     const client = await ensureClient(req.adminId, clientId);
     const refs = [];
+    if (planImage) {
+      const p = path.join(UPLOADS_DIR, path.basename(planImage));
+      try {
+        await fs.access(p);
+        refs.push(p);
+      } catch {}
+    }
     if (sourceImage) {
       const p = path.join(UPLOADS_DIR, path.basename(sourceImage));
       try {
@@ -1043,19 +1182,23 @@ router.post('/generate-render', async (req, res, next) => {
     const fx = Array.isArray(fixtures) ? fixtures.filter(Boolean).join(', ') : String(fixtures || '');
     const isBath = /bagno|bath/i.test(room + ' ' + String(analysis).slice(0, 400));
     const lock = String(layoutLock || '').trim() || (String(analysis).match(/PIANTA VINCOLANTE[\s\S]{0,2500}/) || [''])[0];
-    const prompt = `Photorealistic architectural photograph reconstructing an EXISTING surveyed room. Layout is LAW.
-${lock ? `LOCKED SURVEY (do not change positions):\n${lock}\n` : ''}
-You may change materials, colours, lighting quality. You may NOT move doors, windows, sanitary, furniture, or rotate/mirror the plan.
-ROOM TYPE: ${room || 'see analysis'}${isBath ? '. THIS IS A BATHROOM, never a bedroom. Forbidden: bed, pillows, duvet, nightstands. Keep toilet/bidet, basins, shower exactly on the listed walls.' : ''}
-FLOOR (floor plane only): ${floor || '(distinct from walls)'}
-WALLS (vertical only): ${wall || '(distinct from floor)'}
-CRITICAL: floor ≠ walls. ${fx ? 'Fixtures stay where listed: ' + fx : ''}
-User directives (materials/mood only unless they contradict the survey): ${modelBrief || 'none'}
+    const prompt = `Photorealistic architectural photograph reconstructing an EXISTING surveyed room.
+The FIRST reference image is a MEASURED FLOOR PLAN (top) and the WINDOW-WALL ELEVATION (bottom). Match it exactly.
+Colour key on the plan: cyan = window, blue = shower, beige = washbasins, white = WC, lilac = bidet, red mark = camera at the shower wall looking toward the window.
+FORBIDDEN generic bathroom: do NOT center the window; do NOT put the shower beside the window; do NOT draw one long trough sink.
+On THIS survey: window is offset on the FAR wall; shower is on the OPPOSITE wall (near the camera); TWO separate basins on the left wall; WC then bidet on the right wall.
+${lock ? `LOCKED SURVEY:\n${lock}\n` : ''}
+Layout is LAW. Change only materials and lighting.
+ROOM TYPE: ${room || 'see analysis'}${isBath ? '. Bathroom. Never a bedroom. Keep every fixture on the surveyed wall.' : ''}
+FLOOR: ${floor || '(distinct from walls)'}
+WALLS: ${wall || '(distinct from floor)'}
+${fx ? 'Fixtures stay put: ' + fx : ''}
+User directives (finish/mood only): ${modelBrief || 'none'}
 Style: ${style || 'contemporary Italian interior'}
 Lighting: ${lighting || 'mixed natural and artificial'}
-Palette: ${colors || 'as specified in floor/walls'}
-${extraRefs.length ? 'Catalog texture photos: apply the floor image only on the floor, wall image only on walls.' : ''}
-Camera looks toward the window if one exists; openings stay on the surveyed walls. No extra windows, no rearranged furniture. No text, no watermark, no people.`;
+Palette: ${colors || 'as specified'}
+${extraRefs.length ? 'Further images are catalog textures: floor texture on floor only, wall texture on walls only.' : ''}
+Camera as the red mark: standing at the shower wall, looking at the window. No extra windows, no rearranged furniture. No text, no watermark, no people.`;
 
     const item = await generateInteriorImage(prompt, refs);
     const savedPhoto = await saveGeneratedImage(item, 'render');
@@ -1220,6 +1363,13 @@ router.post('/configure-environment', optionalMultipart, async (req, res, next) 
         fixtures.push(...(parsed.fixtures.length ? parsed.fixtures : ['sanitari contemporanei', 'lavabo', 'doccia o vasca']));
       }
       body.layoutLock = parsed.layoutLock;
+      try {
+        const planPath = path.join(UPLOADS_DIR, `plan-${Date.now()}.png`);
+        await fs.writeFile(planPath, surveyPng(parsed));
+        uploaded.unshift(planPath);
+      } catch (err) {
+        console.error('plan png cfg', err.message);
+      }
       }
     }
 
