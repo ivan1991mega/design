@@ -333,6 +333,32 @@ router.post('/configure-environment', optionalMultipart, async (req, res, next) 
     if ((roomType === 'bagno' || roomType === 'bathroom') && fixtures.length === 0) {
       fixtures.push('sanitari contemporanei', 'doccia o vasca', 'lavabo', 'rubinetteria');
     }
+    if (roomType === 'wellness' && fixtures.length === 0) {
+      fixtures.push('sauna', 'zona relax', 'doccia emozionale');
+    }
+    if (roomType === 'palestra' && fixtures.length === 0) {
+      fixtures.push('attrezzi home gym', 'pavimento in gomma', 'specchi');
+    }
+    if (['terrazzo', 'giardino', 'piscina', 'patio'].includes(roomType) && fixtures.length === 0) {
+      fixtures.push('arredo outdoor', 'piante', 'illuminazione esterna calda');
+    }
+
+    const ROOM_SCENE = {
+      salotto: 'photorealistic interior living room in Italy',
+      cucina: 'photorealistic interior kitchen in Italy',
+      bagno: 'photorealistic interior bathroom in Italy',
+      camera: 'photorealistic interior bedroom in Italy',
+      ufficio: 'photorealistic home office interior in Italy',
+      wellness: 'photorealistic private home spa and wellness suite in Italy, humid stone and warm wood, no people',
+      palestra: 'photorealistic luxury home gym interior in Italy, no people',
+      terrazzo: 'photorealistic rooftop or apartment terrace exterior in Italy, daylight, no people',
+      giardino: 'photorealistic residential garden landscape in Italy, no people',
+      piscina: 'photorealistic private villa swimming pool exterior in Italy, no people',
+      patio: 'photorealistic patio courtyard exterior in Italy, no people',
+      altro: 'photorealistic designed residential space in Italy'
+    };
+    const scene = ROOM_SCENE[roomType] || `photorealistic designed ${roomType} in Italy`;
+    const outdoor = ['terrazzo', 'giardino', 'piscina', 'patio'].includes(roomType);
     const views = parseList(body.views);
     const viewKeys = views.length ? views : ['frontale'];
 
@@ -350,12 +376,12 @@ router.post('/configure-environment', optionalMultipart, async (req, res, next) 
 
     for (const key of viewKeys.slice(0, 4)) {
       const camera = VIEW_PROMPTS[key] || VIEW_PROMPTS.frontale;
-      const prompt = `Photorealistic interior design photograph of a ${roomType} in Italy.
+      const prompt = `${scene}.
 Style: ${stylesText}
 Colors (interpret names like "grigio topo", "ottanio", RAL or hex if present): ${colorsText}
-Floor: ${floorFinish}${floorFile ? ' — apply catalog floor texture from the floor reference photo' : ''}
-Walls: ${wallFinish}${wallFile ? ' — apply catalog wall texture from the wall reference photo' : ''}
-${fixturesText ? `Bathroom/kitchen fixtures to include: ${fixturesText}` : ''}
+${outdoor ? `Outdoor flooring / decking: ${floorFinish}` : `Floor: ${floorFinish}`}${floorFile ? ' — match the catalog floor/deck texture from the reference photo' : ''}
+${outdoor ? `Vertical surfaces, walls or fences: ${wallFinish}` : `Walls: ${wallFinish}`}${wallFile ? ' — match the catalog wall texture from the reference photo' : ''}
+${fixturesText ? `Elements to include: ${fixturesText}` : ''}
 ${brief ? `User layout brief (follow closely): ${brief}` : ''}
 ${sqm ? `Exact area: ${sqm} square meters. Respect realistic proportions.` : `Size class: ${size}`}
 ${planFile ? 'A floor-plan image is provided as reference: respect room shape, openings and circulation as much as possible.' : ''}
