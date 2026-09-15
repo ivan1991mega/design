@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="it">
 <head>
@@ -185,9 +184,11 @@
           </div>
 
           <div class="section">
-            <label>Pianta o schizzo PNG/JPG (facoltativo)</label>
+            <label>Pianta PNG e/o modello SketchUp OBJ (facoltativo)</label>
             <div class="file"><input type="file" name="planImage" accept="image/*"></div>
-            <p class="hint">Se carichi una pianta, il modello prova a rispettare forma e aperture.</p>
+            <p class="hint">Pianta o schermata: il modello rispetta forma e aperture.</p>
+            <div class="file" style="margin-top:8px;"><input type="file" name="model" accept=".obj,.stl,.gltf,.glb,.dae,.mtl,.zip,.txt" multiple></div>
+            <p class="hint">OBJ, MTL o ZIP. Vale come geometria; pavimento e pareti restano quelli scelti sopra.</p>
           </div>
 
           <div class="grid-2">
@@ -420,17 +421,20 @@
           <select id="clientSelect" onchange="selectClient(this.value)"><option value="">— Seleziona —</option></select>
         </div>
         <div class="section">
-          <label>Trascina qui foto PNG e modello OBJ insieme</label>
+          <label>Trascina PNG, OBJ, MTL o uno ZIP</label>
           <div class="file drop" id="dropZone">
             <div>
-              <p>Trascina PNG + OBJ, oppure clicca</p>
-              <p class="hint" id="dropHint">Puoi lasciare entrambi nello stesso momento</p>
+              <p>Trascina qui PNG + OBJ, oppure uno ZIP con OBJ e MTL</p>
+              <p class="hint" id="dropHint">ZIP consigliato: OBJ + MTL + cartella delle jpg (texture SketchUp). Così pavimento e rivestimento restano quelli del catalogo.</p>
             </div>
-            <input type="file" id="mixedFiles" multiple accept="image/png,image/jpeg,image/webp,.obj,.stl,.gltf,.glb,.dae,.mtl" style="display:none">
+            <input type="file" id="mixedFiles" multiple accept="image/png,image/jpeg,image/webp,.obj,.stl,.gltf,.glb,.dae,.mtl,.zip,.txt,application/zip,application/octet-stream" style="display:none">
           </div>
-          <input type="file" id="imageFile" accept="image/png,image/jpeg,image/webp" style="display:none" onchange="handleImageSelect()">
-          <input type="file" id="modelFile" accept=".obj,.stl,.gltf,.glb,.dae,.mtl" style="display:none" onchange="handleModelSelect()">
           <p class="hint" id="modelLabel"></p>
+        </div>
+        <div class="section">
+          <label>Incolla i componenti SketchUp (se il file non parte)</label>
+          <textarea id="objectList" placeholder="Un nome per riga, es.&#10;Toilet&#10;Bidet&#10;Lavabo&#10;Box_doccia&#10;Pavimento_Bagno&#10;Parete"></textarea>
+          <p class="hint">Da SketchUp: Finestra → Struttura (Outliner), copia i nomi. Basta per capire che è un bagno.</p>
         </div>
         <div class="section">
           <label>Direttive sul modello 3D / SketchUp</label>
@@ -444,12 +448,30 @@
         <button type="button" onclick="analyzeImage()" style="margin-top:12px;width:100%;">Analizza il rilievo</button>
         <pre id="analysisBox" class="hint" style="white-space:pre-wrap;margin-top:12px;display:none;"></pre>
         <div id="renderForm" style="display:none; margin-top:16px;">
+          <p class="hint" id="detectNote" style="margin-bottom:12px;"></p>
+          <div class="section"><label>Stanza rilevata (correggi se sbaglia)</label>
+            <select id="renderRoom">
+              <option value="bagno">Bagno</option>
+              <option value="cucina">Cucina</option>
+              <option value="salotto">Soggiorno</option>
+              <option value="camera">Camera</option>
+              <option value="ufficio">Ufficio</option>
+              <option value="altro">Altro</option>
+            </select>
+          </div>
+          <div class="section"><label>Pavimento (vincola il render — diverso dalle pareti)</label>
+            <input id="renderFloor" placeholder="es. gres effetto pietra greige">
+          </div>
+          <div class="section"><label>Pareti (vincola il render — diverso dal pavimento)</label>
+            <input id="renderWall" placeholder="es. pittura ottanio opaca">
+          </div>
           <div class="section"><label>Stile</label><input id="renderStyle"></div>
           <div class="section"><label>Luce</label>
             <select id="renderLighting"><option>Naturale</option><option>Calda</option><option>Mista</option></select>
           </div>
           <div class="section"><label>Colori (nomi liberi)</label><input id="renderColors" placeholder="ottanio, grigio topo"></div>
-          <button onclick="generaRender()" style="width:100%;">Genera render</button>
+          <button type="button" onclick="generaRender()" style="width:100%;">Genera render da rilievo</button>
+          <button type="button" class="ghost" onclick="applyAnalysisToConfig()" style="width:100%;margin-top:8px;">Porta stanza e finiture nel configuratore</button>
         </div>
         <div id="renderResult" style="display:none; margin-top:16px;">
           <img id="renderImg" class="preview">
@@ -466,8 +488,11 @@ let token = localStorage.getItem('token');
 let currentClient = null;
 let currentImage = null;
 let currentModel = null;
+let currentMtl = null;
 let currentAnalysis = null;
 let currentSourceImage = null;
+let lastSuggested = null;
+let lastTextureRefs = [];
 let configViews = [];
 let viewTimer = null;
 let currentViewIndex = 0;
@@ -652,6 +677,34 @@ function filterClients() {
   });
 }
 
+function applyAnalysisToConfig() {
+  const s = lastSuggested || {};
+  const room = document.getElementById('renderRoom')?.value || s.roomType;
+  const roomSel = document.getElementById('roomType');
+  if (room && roomSel) {
+    roomSel.value = room;
+    toggleRoomExtras();
+  }
+  const floor = document.getElementById('renderFloor')?.value || '';
+  const wall = document.getElementById('renderWall')?.value || '';
+  const brief = document.getElementById('briefField');
+  const extra = [
+    s.note || '',
+    floor ? ('Pavimento: ' + floor) : '',
+    wall ? ('Pareti: ' + wall) : '',
+    (s.fixtures && s.fixtures.length) ? ('Sanitari/elementi: ' + s.fixtures.join(', ')) : '',
+    document.getElementById('modelBrief')?.value || ''
+  ].filter(Boolean).join('. ');
+  if (brief && extra) brief.value = (brief.value ? brief.value + '\n' : '') + extra;
+  if (s.fixtures) {
+    s.fixtures.forEach(v => {
+      const cb = document.querySelector('#configForm input[name="fixture"][value="' + v + '"]');
+      if (cb) cb.checked = true;
+    });
+  }
+  switchTab('configStudio');
+}
+
 function switchTab(tab) {
   document.querySelectorAll('#configStudio, #archive, #clients, #viewer').forEach(e => e.classList.remove('active'));
   document.querySelectorAll('.wrap > .tabs > .tab-btn').forEach(b => b.classList.remove('active'));
@@ -680,7 +733,7 @@ function handleModelSelect() {
 }
 
 function isModelFile(f) {
-  return /\.(obj|stl|gltf|glb|dae|mtl)$/i.test(f.name);
+  return /\.(obj|stl|gltf|glb|dae|mtl|zip|txt)$/i.test(f.name);
 }
 function isImageFile(f) {
   return /^image\//.test(f.type) || /\.(png|jpe?g|webp)$/i.test(f.name);
@@ -695,6 +748,8 @@ function takeDroppedFiles(files) {
         document.getElementById('imagePreview').style.display = 'block';
       };
       reader.readAsDataURL(f);
+    } else if (/\.(mtl)$/i.test(f.name)) {
+      currentMtl = f;
     } else if (isModelFile(f)) {
       currentModel = f;
     }
@@ -702,9 +757,10 @@ function takeDroppedFiles(files) {
   const parts = [];
   if (currentImage) parts.push('PNG/JPG: ' + currentImage.name);
   if (currentModel) parts.push('Modello: ' + currentModel.name);
+  if (currentMtl) parts.push('MTL: ' + currentMtl.name);
   const hint = document.getElementById('dropHint');
   const lab = document.getElementById('modelLabel');
-  if (hint) hint.textContent = parts.join(' + ') || 'Puoi lasciare entrambi nello stesso momento';
+  if (hint) hint.textContent = parts.join(' + ') || 'Puoi lasciare PNG + OBJ + MTL insieme';
   if (lab) lab.textContent = parts.join(' · ');
 }
 
@@ -771,10 +827,13 @@ function toggleDictation(fieldId, btnId) {
 
 async function analyzeImage() {
   currentClient = document.getElementById('clientSelect').value || currentClient;
-  if (!currentImage && !currentModel) { alert('Carica una foto e/o un OBJ'); return; }
+  const objectList = (document.getElementById('objectList')?.value || '').trim();
+  if (!currentImage && !currentModel && !objectList) { alert('Carica una foto, un OBJ/ZIP, oppure incolla i nomi SketchUp'); return; }
   const fd = new FormData();
   if (currentImage) fd.append('image', currentImage);
   if (currentModel) fd.append('model', currentModel);
+  if (currentMtl) fd.append('mtl', currentMtl);
+  if (objectList) fd.append('objectList', objectList);
   const modelBrief = (document.getElementById('modelBrief')?.value || '').trim();
   if (modelBrief) fd.append('modelBrief', modelBrief);
   const res = await fetch('/api/renders/analyze-image', {
@@ -784,11 +843,30 @@ async function analyzeImage() {
   if (data.success) {
     currentAnalysis = data.data.analysis;
     currentSourceImage = data.data.sourceImage || null;
+    lastSuggested = data.data.suggested || null;
+    lastTextureRefs = data.data.textureRefs || lastSuggested?.textureRefs || [];
     document.getElementById('renderForm').style.display = 'block';
     const box = document.getElementById('analysisBox');
     if (box) {
       box.style.display = 'block';
       box.textContent = currentAnalysis.slice(0, 2500);
+    }
+    const s = lastSuggested || {};
+    const roomEl = document.getElementById('renderRoom');
+    if (roomEl && s.roomType) roomEl.value = s.roomType;
+    if (document.getElementById('renderFloor')) document.getElementById('renderFloor').value = s.floorGuess || '';
+    if (document.getElementById('renderWall')) document.getElementById('renderWall').value = s.wallGuess || '';
+    const note = document.getElementById('detectNote');
+    if (note) {
+      const bits = [];
+      if (s.roomType) bits.push('Stanza: ' + s.roomType);
+      if (s.fixtures && s.fixtures.length) bits.push('Rilevati: ' + s.fixtures.join(', '));
+      if (s.note) bits.push(s.note);
+      if (lastTextureRefs.length) bits.push('Texture dallo ZIP: ' + lastTextureRefs.map(t => t.role + ' ' + (t.filename || '')).join(', '));
+      note.textContent = bits.join(' · ') || 'Controlla pavimento e pareti prima di generare.';
+    }
+    if (s.roomType === 'bagno' && document.getElementById('modelBrief') && !document.getElementById('modelBrief').value) {
+      document.getElementById('modelBrief').value = 'È un bagno. Tieni sanitari, lavabo e doccia/vasca dove sono nel modello. Non fare una camera da letto.';
     }
   } else alert(data.error || 'Errore analisi');
 }
@@ -804,6 +882,11 @@ async function generaRender() {
       analysis: currentAnalysis,
       sourceImage: currentSourceImage,
       modelBrief: (document.getElementById('modelBrief')?.value || '').trim(),
+      roomType: document.getElementById('renderRoom')?.value || lastSuggested?.roomType,
+      floorFinish: document.getElementById('renderFloor')?.value || '',
+      wallFinish: document.getElementById('renderWall')?.value || '',
+      fixtures: lastSuggested?.fixtures || [],
+      textureRefs: lastTextureRefs,
       style: document.getElementById('renderStyle').value,
       lighting: document.getElementById('renderLighting').value,
       colors: document.getElementById('renderColors').value
@@ -821,7 +904,7 @@ async function generaRender() {
 }
 
 function resetRender() {
-  currentAnalysis = null; currentImage = null;
+  currentAnalysis = null; currentImage = null; currentModel = null; currentMtl = null; lastSuggested = null;
   document.getElementById('renderForm').style.display = 'none';
   document.getElementById('renderResult').style.display = 'none';
 }
@@ -870,6 +953,8 @@ async function submitConfig(e) {
   const floor = form.querySelector('[name="floorTexture"]').files[0];
   const wall = form.querySelector('[name="wallTexture"]').files[0];
   const plan = form.querySelector('[name="planImage"]').files[0];
+  const modelInputs = [...form.querySelectorAll('[name="model"]')];
+  const modelFiles = modelInputs.flatMap(inp => [...(inp.files || [])]);
   let clientId = document.getElementById('clientSelectConfig').value;
   if (!clientId) {
     const first = [...document.getElementById('clientSelectConfig').options].find(o => o.value);
@@ -916,7 +1001,7 @@ async function submitConfig(e) {
   document.getElementById('configLoading').style.display = 'block';
 
   let res;
-  if (floor || wall || plan) {
+  if (floor || wall || plan || modelFiles.length) {
     const send = new FormData();
     Object.entries(payload).forEach(([k, v]) => {
       if (v == null || v === '') return;
@@ -925,6 +1010,10 @@ async function submitConfig(e) {
     if (floor) send.append('floorTexture', floor);
     if (wall) send.append('wallTexture', wall);
     if (plan) send.append('planImage', plan);
+    modelFiles.forEach(f => {
+      if (/\.mtl$/i.test(f.name)) send.append('mtl', f);
+      else send.append('model', f);
+    });
     res = await fetch('/api/renders/configure-environment', {
       method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: send
     });
