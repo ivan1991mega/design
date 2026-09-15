@@ -284,7 +284,93 @@ function guessFinishFromName(name, role) {
   return '';
 }
 
-function parseObjSummary(text, mtlText) {
+function inferDoor(size, openings, placed, hint) {
+  if ((openings || []).some((a) => a.type === 'porta')) return null;
+  const roomW = size[0];
+  const roomD = size[2];
+  const roomH = size[1];
+  if (!(roomW > 50 && roomD > 50)) return null;
+  const walls = {
+    'z-': { length: roomW, occ: [] },
+    'z+': { length: roomW, occ: [] },
+    'x-': { length: roomD, occ: [] },
+    'x+': { length: roomD, occ: [] }
+  };
+  const add = (wall, a, b) => {
+    if (!walls[wall] || !(b > a)) return;
+    walls[wall].occ.push([Math.max(0, a), Math.min(walls[wall].length, b)]);
+  };
+  for (const a of [...(openings || []), ...(placed || [])]) {
+    if (a.wall === 'z-' || a.wall === 'z+') add(a.wall, a.fromX, a.fromX + (a.sizeX || a.width || 0));
+    else if (a.wall === 'x-' || a.wall === 'x+') add(a.wall, a.fromZ, a.fromZ + (a.sizeZ || a.width || 0));
+  }
+  const hintN = normName(hint || '');
+  const prefer = [];
+  if (/destra|right|\bx\+/.test(hintN)) prefer.push('x+');
+  if (/sinistra|left|\bx-/.test(hintN)) prefer.push('x-');
+  if (/fondo|finestra|window|\bz-/.test(hintN)) prefer.push('z-');
+  if (/ingresso|doccia|opposta|\bz\+/.test(hintN)) prefer.push('z+');
+  const winWall = (openings || []).find((o) => o.type === 'finestra')?.wall;
+  let best = null;
+  for (const wall of ['x+', 'z+', 'x-', 'z-']) {
+    const w = walls[wall];
+    const occ = w.occ.slice().sort((a, b) => a[0] - b[0]);
+    const merged = [];
+    for (const s of occ) {
+      if (!merged.length || s[0] > merged[merged.length - 1][1] + 8) merged.push(s.slice());
+      else merged[merged.length - 1][1] = Math.max(merged[merged.length - 1][1], s[1]);
+    }
+    let cursor = 0;
+    const gaps = [];
+    for (const [s, e] of merged) {
+      if (s - cursor >= 70) gaps.push([cursor, s]);
+      cursor = Math.max(cursor, e);
+    }
+    if (w.length - cursor >= 70) gaps.push([cursor, w.length]);
+    for (const [s, e] of gaps) {
+      const gapW = e - s;
+      const doorW = Math.min(90, gapW > 100 ? 80 : gapW);
+      let start = s === 0 ? 0 : (e >= w.length - 1 ? e - doorW : s);
+      if (start + doorW > e) start = Math.max(s, e - doorW);
+      let score = Math.min(gapW, 130);
+      if (prefer.includes(wall)) score += 90;
+      if (winWall && wall === winWall) score -= 20;
+      if ((placed || []).some((p) => /doccia|shower/.test(normName(p.name)) && p.wall === wall)) score -= 10;
+      if (s === 0 || e >= w.length - 1) score += 8;
+      if (!best || score > best.score) best = { wall, start, doorW, score };
+    }
+  }
+  if (!best) return null;
+  const thick = 12;
+  const h = Math.min(210, roomH > 50 ? roomH * 0.78 : 210);
+  const item = {
+    name: 'porta (vuoto in parete)',
+    role: 'opening',
+    type: 'porta',
+    wall: best.wall,
+    width: Number(best.doorW.toFixed(1)),
+    height: Number(h.toFixed(1)),
+    sill: 0,
+    thick,
+    inferred: true
+  };
+  if (best.wall === 'z-' || best.wall === 'z+') {
+    item.fromX = Number(best.start.toFixed(1));
+    item.fromZ = best.wall === 'z-' ? 0 : Number((roomD - thick).toFixed(1));
+    item.sizeX = item.width;
+    item.sizeY = item.height;
+    item.sizeZ = thick;
+  } else {
+    item.fromX = best.wall === 'x-' ? 0 : Number((roomW - thick).toFixed(1));
+    item.fromZ = Number(best.start.toFixed(1));
+    item.sizeX = thick;
+    item.sizeY = item.height;
+    item.sizeZ = item.width;
+  }
+  return item;
+}
+
+function parseObjSummary(text, mtlText, doorHint) {
   const vertsMin = [Infinity, Infinity, Infinity];
   const vertsMax = [-Infinity, -Infinity, -Infinity];
   let vertCount = 0;
@@ -445,6 +531,11 @@ function parseObjSummary(text, mtlText) {
     }
   }
   placed.sort((a, b) => (b.sizeX * b.sizeZ) - (a.sizeX * a.sizeZ));
+  const inferredDoor = inferDoor(size, openings, placed, doorHint);
+  if (inferredDoor) {
+    openings.push(inferredDoor);
+    if (!fixtures.includes('porta')) fixtures.push('porta');
+  }
   const win = openings.filter((a) => a.type === 'finestra').sort((a, b) => b.width * b.height - a.width * a.height)[0]
     || openings[0];
   const relWall = (wall) => {
@@ -463,7 +554,7 @@ function parseObjSummary(text, mtlText) {
     win
       ? `FINESTRA: ${win.name} ${toHuman(win.width)} × h ${toHuman(win.height)}, davanzale ${toHuman(win.sill)}, a X=${toHuman(win.fromX)} sulla ${relWall(win.wall)}. Unica. Non spostarla.`
       : 'Nessuna finestra nel modello: non inventarne.',
-    ...openings.filter((a) => a.type === 'porta').map((a) => `PORTA ${a.name}: ${toHuman(a.width)} × h ${toHuman(a.height)} a X=${toHuman(a.fromX)} Z=${toHuman(a.fromZ)} sulla ${a.rel}. Fissa.`),
+    ...openings.filter((a) => a.type === 'porta').map((a) => `PORTA ${a.inferred ? '(non era un oggetto SketchUp, ricavata dal vuoto in parete)' : a.name}: ${toHuman(a.width)} × h ${toHuman(a.height)} a X=${toHuman(a.fromX)} Z=${toHuman(a.fromZ)} sulla ${a.rel}. Fissa. Se è sulla parete sbagliata, indica la porta nel campo Porta.`),
     'ELEMENTI FISSI (coordinate dall\'angolo origine, non rimescolare):',
     ...placed.slice(0, 20).map((a) => `- ${a.name} [${a.role}] ${a.rel || a.wall} | X ${toHuman(a.fromX)} Z ${toHuman(a.fromZ)} | ${toHuman(a.sizeX)}×${toHuman(a.sizeZ)} h ${toHuman(a.sizeY)}`),
     win
@@ -932,7 +1023,7 @@ router.post('/analyze-image', analyzeUpload, async (req, res, next) => {
         });
       }
       if (mtlName) mtlText = entries[mtlName].toString('utf8');
-      mesh = parseObjSummary(entries[objName].toString('utf8'), mtlText);
+      mesh = parseObjSummary(entries[objName].toString('utf8'), mtlText, req.body?.doorHint || req.body?.modelBrief);
       await fs.mkdir(UPLOADS_DIR, { recursive: true });
       for (const [name, buf] of Object.entries(entries)) {
         const low = name.replace(/\\/g, '/').toLowerCase();
@@ -946,7 +1037,7 @@ router.post('/analyze-image', analyzeUpload, async (req, res, next) => {
       }
     } else if (modelFile && (ext === '.obj' || ext === '.txt' || ext === '')) {
       const text = await fs.readFile(modelFile.path, 'utf8');
-      if (looksLikeObj(text) || ext === '.obj') mesh = parseObjSummary(text, mtlText);
+      if (looksLikeObj(text) || ext === '.obj') mesh = parseObjSummary(text, mtlText, req.body?.doorHint || req.body?.modelBrief);
       else {
         return res.status(400).json({ success: false, error: 'Il file non sembra un OBJ. Esporta da SketchUp in OBJ o metti OBJ+MTL in uno ZIP.' });
       }
@@ -1345,7 +1436,7 @@ router.post('/configure-environment', optionalMultipart, async (req, res, next) 
         objTxt = await fs.readFile(modelFileCfg.path, 'utf8');
       }
       if (objTxt) {
-      const parsed = parseObjSummary(objTxt, mtlTxt);
+      const parsed = parseObjSummary(objTxt, mtlTxt, body.doorHint || body.brief);
       body.modelLayout = JSON.stringify({
         suggestedRoom: parsed.suggestedRoom,
         note: parsed.note,
