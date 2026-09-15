@@ -432,22 +432,67 @@ function parseMtl(text) {
 
 async function unzipEntries(buf) {
   const files = {};
+  if (!Buffer.isBuffer(buf) || buf.length < 22) return files;
+  let eocd = -1;
+  for (let i = buf.length - 22; i >= 0 && i >= buf.length - 65557; i--) {
+    if (buf.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) return unzipLocalScan(buf);
+  const n = buf.readUInt16LE(eocd + 10);
+  let i = buf.readUInt32LE(eocd + 16);
+  for (let k = 0; k < n && i + 46 <= buf.length; k++) {
+    if (buf.readUInt32LE(i) !== 0x02014b50) break;
+    const method = buf.readUInt16LE(i + 10);
+    const compSize = buf.readUInt32LE(i + 20);
+    const nameLen = buf.readUInt16LE(i + 28);
+    const extraLen = buf.readUInt16LE(i + 30);
+    const commLen = buf.readUInt16LE(i + 32);
+    const localOff = buf.readUInt32LE(i + 42);
+    const name = buf.slice(i + 46, i + 46 + nameLen).toString('utf8').replace(/\\/g, '/');
+    i += 46 + nameLen + extraLen + commLen;
+    if (!name || name.endsWith('/')) continue;
+    const base = name.split('/').pop() || name;
+    if (name.includes('__MACOSX') || base.startsWith('._')) continue;
+    try {
+      files[name] = await readZipFile(buf, localOff, method, compSize);
+    } catch (err) {
+      console.error('unzip skip', name, err.message);
+    }
+  }
+  return files;
+}
+
+async function readZipFile(buf, localOff, method, compSize) {
+  const nameLen = buf.readUInt16LE(localOff + 26);
+  const extraLen = buf.readUInt16LE(localOff + 28);
+  const dataStart = localOff + 30 + nameLen + extraLen;
+  const data = buf.slice(dataStart, dataStart + compSize);
+  if (method === 0) return data;
+  if (method === 8) return inflateRaw(data);
+  throw new Error('metodo zip ' + method);
+}
+
+async function unzipLocalScan(buf) {
+  const files = {};
   let i = 0;
   while (i + 30 <= buf.length) {
     if (buf.readUInt32LE(i) !== 0x04034b50) break;
     const method = buf.readUInt16LE(i + 8);
     const flags = buf.readUInt16LE(i + 6);
-    const compSize = buf.readUInt32LE(i + 18);
+    let compSize = buf.readUInt32LE(i + 18);
     const nameLen = buf.readUInt16LE(i + 26);
     const extraLen = buf.readUInt16LE(i + 28);
-    const name = buf.slice(i + 30, i + 30 + nameLen).toString('utf8');
+    const name = buf.slice(i + 30, i + 30 + nameLen).toString('utf8').replace(/\\/g, '/');
     const dataStart = i + 30 + nameLen + extraLen;
-    if (flags & 8) break;
+    if (flags & 8) {
+      // data descriptor: skip this scan, central dir should have handled it
+      break;
+    }
     const data = buf.slice(dataStart, dataStart + compSize);
     let out = data;
     if (method === 8) out = await inflateRaw(data);
     else if (method !== 0) { i = dataStart + compSize; continue; }
-    files[name.replace(/\\/g, '/')] = out;
+    if (name && !name.endsWith('/') && !name.includes('__MACOSX')) files[name] = out;
     i = dataStart + compSize;
   }
   return files;
@@ -649,10 +694,23 @@ router.post('/analyze-image', analyzeUpload, async (req, res, next) => {
     let zipMaps = [];
     if (modelFile && ext === '.zip') {
       const entries = await unzipEntries(await fs.readFile(modelFile.path));
-      const objName = Object.keys(entries).find((n) => n.toLowerCase().endsWith('.obj') && !n.includes('__MACOSX'));
-      const mtlName = Object.keys(entries).find((n) => n.toLowerCase().endsWith('.mtl') && !n.includes('__MACOSX'));
+      const names = Object.keys(entries);
+      const objName = names.find((n) => {
+        const low = n.toLowerCase();
+        const base = low.split('/').pop();
+        return low.endsWith('.obj') && !low.includes('__macosx') && !base.startsWith('._');
+      });
+      const mtlName = names.find((n) => {
+        const low = n.toLowerCase();
+        const base = low.split('/').pop();
+        return low.endsWith('.mtl') && !low.includes('__macosx') && !base.startsWith('._');
+      });
       if (!objName) {
-        return res.status(400).json({ success: false, error: 'Nello ZIP non c’è un file .obj' });
+        const seen = names.map((n) => n.split('/').pop()).filter(Boolean).slice(0, 12).join(', ') || 'vuoto';
+        return res.status(400).json({
+          success: false,
+          error: `Nello ZIP non c’è un file .obj (trovato: ${seen}). Zippa OBJ+MTL+cartella jpg, anche se sono in una sottocartella.`
+        });
       }
       if (mtlName) mtlText = entries[mtlName].toString('utf8');
       mesh = parseObjSummary(entries[objName].toString('utf8'), mtlText);
