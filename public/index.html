@@ -123,7 +123,19 @@
                 <option value="cucina">Cucina</option>
                 <option value="bagno">Bagno</option>
                 <option value="camera">Camera</option>
-                <option value="ufficio">Studio</option>
+                <option value="ufficio">Studio / home office</option>
+                <option value="ufficio_open">Ufficio open space</option>
+                <option value="sala_riunioni">Sala riunioni</option>
+                <option value="sala_attesa">Sala d'attesa</option>
+                <option value="reception">Reception</option>
+                <option value="coworking">Coworking</option>
+                <option value="ingresso">Ingresso / hall</option>
+                <option value="corridoio">Corridoio</option>
+                <option value="cabina">Cabina armadio</option>
+                <option value="lavanderia">Lavanderia</option>
+                <option value="taverna">Taverna</option>
+                <option value="ristorante">Ristorante / sala</option>
+                <option value="lobby">Lobby hotel</option>
                 <option value="wellness">Zona wellness / spa</option>
                 <option value="palestra">Home gym</option>
                 <option value="terrazzo">Terrazzo</option>
@@ -216,50 +228,35 @@
 
           <div class="grid-2">
             <div class="section">
-              <label>Pavimento</label>
-              <select name="floorFinish">
-                <option value="parquet noce canaletto opaco listoni larghi">Parquet noce canaletto</option>
-                <option value="parquet rovere fume spazzolato">Rovere fumé spazzolato</option>
-                <option value="parquet rovere naturale oliato listoni XXL">Rovere oliato XXL</option>
-                <option value="parquet rovere sbiancato nordico">Rovere sbiancato</option>
-                <option value="gres grande formato effetto travertino beige">Gres travertino</option>
-                <option value="gres effetto pietra naturale irregolare">Gres pietra naturale</option>
-                <option value="gres effetto argilla cruda">Gres argilla</option>
-                <option value="gres effetto calcare chiaro">Gres calcare</option>
-                <option value="gres effetto ardesia">Gres ardesia</option>
-                <option value="gres effetto cemento minerale caldo">Gres cemento caldo</option>
-                <option value="gres effetto marmo calacatta venato">Gres Calacatta</option>
-                <option value="cotto fatto a mano toscano">Cotto artigianale</option>
-                <option value="microcemento continuo tono sabbia">Microcemento sabbia</option>
-                <option value="terracotta smaltata irregolare">Terracotta smaltata</option>
-                <option value="decking in legno teak per esterni">Decking teak</option>
-                <option value="gres per esterni effetto pietra antiscivolo">Gres esterno pietra</option>
-                <option value="pietra naturale da giardino">Pietra giardino</option>
-                <option value="erba e camminamenti in pietra">Erba e camminamenti</option>
+              <label>Pavimento — materiale</label>
+              <select name="floorFamily" id="floorFamily" onchange="toggleFinishDetails()">
+                <option value="parquet">Parquet / legno</option>
+                <option value="gres">Gres / ceramica</option>
+                <option value="microcemento">Microcemento</option>
+                <option value="cotto">Cotto / terracotta</option>
+                <option value="esterno">Esterno (deck, pietra, erba)</option>
               </select>
+              <div id="floorDetails"></div>
+              <input type="hidden" name="floorFinish" id="floorFinishHidden">
               <div class="file" style="margin-top:8px;"><input type="file" name="floorTexture" accept="image/*"></div>
-              <p class="hint">Foto catalogo pavimento, facoltativa</p>
+              <p class="hint">Trama e colore cambiano in base al materiale. Foto catalogo facoltativa.</p>
             </div>
             <div class="section">
-              <label>Pareti / rivestimento</label>
-              <select name="wallFinish">
-                <option value="intonaco alla calce materico opaco">Calce materica</option>
-                <option value="effetto argilla cruda spatolata">Argilla spatolata</option>
-                <option value="pittura color drenching stesso tono porte e boiserie">Color drenching</option>
-                <option value="grasscloth carta di lino naturale">Grasscloth / lino</option>
-                <option value="carta da parati botanica tono su tono">Parati botanica</option>
-                <option value="carta da parati paesaggio murale">Parati paesaggio</option>
-                <option value="boiserie cannettata legno noce">Boiserie cannettata noce</option>
-                <option value="pannelli cannettati rovere">Cannettato rovere</option>
-                <option value="lastre gres 120x280 effetto pietra">Lastre gres pietra</option>
-                <option value="lastre gres effetto marmo bookmatch">Bookmatch marmo</option>
-                <option value="rivestimento pietra a spacco irregolare">Pietra a spacco</option>
-                <option value="mattone a vista scialbato">Mattone scialbato</option>
-                <option value="piastrelle bagno 60x120 effetto pietra umida">Gres bagno 60x120</option>
-                <option value="zellige fatte a mano irregolari">Zellige artigianali</option>
+              <label>Pareti — materiale</label>
+              <select name="wallFamily" id="wallFamily" onchange="toggleFinishDetails()">
+                <option value="pittura">Pittura liscia</option>
+                <option value="calce">Calce / argilla</option>
+                <option value="parati">Carta da parati</option>
+                <option value="boiserie">Boiserie / legno</option>
+                <option value="gres">Lastre gres</option>
+                <option value="pietra">Pietra</option>
+                <option value="zellige">Zellige / piastrella</option>
+                <option value="mattone">Mattone</option>
               </select>
+              <div id="wallDetails"></div>
+              <input type="hidden" name="wallFinish" id="wallFinishHidden">
               <div class="file" style="margin-top:8px;"><input type="file" name="wallTexture" accept="image/*"></div>
-              <p class="hint">Foto catalogo rivestimento, facoltativa</p>
+              <p class="hint">Su boiserie vedi solo essenze e doghe, non lo spatolato.</p>
             </div>
           </div>
 
@@ -311,6 +308,19 @@
               <label class="chip"><input type="checkbox" name="fixture" value="zona pesi liberi e kettlebell"> Pesi liberi</label>
               <label class="chip"><input type="checkbox" name="fixture" value="parete specchi e pavimento in gomma"> Specchi e gomma</label>
               <label class="chip"><input type="checkbox" name="fixture" value="zona stretching e yoga"> Yoga</label>
+            </div>
+          </div>
+
+          <div id="ufficioExtra" class="section room-extra">
+            <label>Ufficio / accoglienza</label>
+            <div class="chips">
+              <label class="chip"><input type="checkbox" name="fixture" value="bancone reception"> Reception</label>
+              <label class="chip"><input type="checkbox" name="fixture" value="zona attesa con poltrone"> Attesa</label>
+              <label class="chip"><input type="checkbox" name="fixture" value="scrivanie operative"> Scrivanie</label>
+              <label class="chip"><input type="checkbox" name="fixture" value="sala meeting con tavolo"> Meeting</label>
+              <label class="chip"><input type="checkbox" name="fixture" value="phone booth"> Phone booth</label>
+              <label class="chip"><input type="checkbox" name="fixture" value="librerie e contenitori bassi"> Librerie</label>
+              <label class="chip"><input type="checkbox" name="fixture" value="illuminazione a binario"> Binario</label>
             </div>
           </div>
 
@@ -456,6 +466,88 @@ function toggleRoomExtras() {
   show('wellnessExtra', room === 'wellness');
   show('palestraExtra', room === 'palestra');
   show('esternoExtra', ['terrazzo', 'giardino', 'piscina', 'patio'].includes(room));
+  show('ufficioExtra', ['ufficio', 'ufficio_open', 'sala_riunioni', 'sala_attesa', 'reception', 'coworking', 'lobby'].includes(room));
+}
+
+const FLOOR_OPTS = {
+  parquet: {
+    trama: [['listoni larghi XXL','Listoni XXL'],['spina ungherese','Spina ungherese'],['spazzolato oliato','Spazzolato oliato'],['piallato a mano','Piallato']],
+    colore: [['noce canaletto','Noce canaletto'],['rovere naturale','Rovere naturale'],['rovere fume','Rovere fumé'],['rovere sbiancato','Rovere sbiancato'],['teak','Teak']]
+  },
+  gres: {
+    trama: [['effetto pietra naturale','Effetto pietra'],['effetto travertino','Travertino'],['effetto cemento','Cemento'],['effetto marmo','Marmo'],['effetto legno','Effetto legno'],['effetto argilla','Argilla']],
+    colore: [['sabbia calda','Sabbia'],['greige','Greige'],['calacatta','Calacatta'],['ardesia','Ardesia'],['terracotta','Terracotta'],['antracite caldo','Antracite']]
+  },
+  microcemento: {
+    trama: [['spatolato continuo','Spatolato'],['nuvolato','Nuvolato'],['liscio opaco','Liscio opaco']],
+    colore: [['sabbia','Sabbia'],['greige','Greige'],['cemento caldo','Cemento caldo'],['tortora','Tortora']]
+  },
+  cotto: {
+    trama: [['fatto a mano toscano','Fatto a mano'],['smaltato irregolare','Smaltato'],['cotto rustico','Rustico']],
+    colore: [['rosso cotto','Rosso cotto'],['rosa antico','Rosa antico'],['ocra','Ocra']]
+  },
+  esterno: {
+    trama: [['decking legno','Decking'],['gres antiscivolo','Gres esterno'],['pietra naturale','Pietra'],['erba e camminamenti','Erba + pietra']],
+    colore: [['teak','Teak'],['pietra chiara','Pietra chiara'],['basalto','Basalto']]
+  }
+};
+
+const WALL_OPTS = {
+  pittura: {
+    trama: [['liscia opaca','Liscia'],['color drenching','Color drenching'],['lavabile opaca','Lavabile']],
+    colore: [['cloud dancer','Cloud Dancer'],['greige','Greige'],['eucalipto','Eucalipto'],['ottanio','Ottanio'],['grigio topo','Grigio topo'],['alabastro','Alabastro']]
+  },
+  calce: {
+    trama: [['spatolato','Spatolato'],['frattazzato','Frattazzato'],['spugnato','Spugnato'],['nuvolato','Nuvolato'],['materico grezzo','Materico']],
+    colore: [['calce naturale','Calce'],['argilla','Argilla'],['sabbia','Sabbia'],['terra bruciata','Terra'],['salvia polverosa','Salvia']]
+  },
+  parati: {
+    trama: [['botanica tono su tono','Botanica'],['paesaggio murale','Paesaggio'],['grasscloth lino','Lino / grasscloth'],['geometrica soft','Geometrica']],
+    colore: [['crema e verde oliva','Crema/oliva'],['sabbia e terracotta','Sabbia/terra'],['carta e inchiostro','Carta/inchiostro']]
+  },
+  boiserie: {
+    trama: [['cannettata verticale','Cannettata'],['doghe orizzontali','Doghe'],['pannelli lisci','Pannelli lisci'],['bugnata classica','Bugnata']],
+    colore: [['noce canaletto','Noce'],['rovere naturale','Rovere'],['rovere fume','Fumé'],['laccato greige','Laccato greige'],['laccato cloud dancer','Laccato chiaro']]
+  },
+  gres: {
+    trama: [['lastre 120x280 pietra','Lastre pietra'],['bookmatch marmo','Bookmatch'],['effetto calcare','Calcare']],
+    colore: [['travertino','Travertino'],['calacatta','Calacatta'],['pietra grigia calda','Pietra calda']]
+  },
+  pietra: {
+    trama: [['a spacco irregolare','A spacco'],['filetti orizzontali','Filetti'],['lastre levigate','Levigata']],
+    colore: [['pietra chiara','Chiara'],['pietra ocra','Ocra'],['pietra grigia','Grigia']]
+  },
+  zellige: {
+    trama: [['fatte a mano irregolari','Artigianali'],['smalto lucido ondulato','Smalto lucido'],['formato 10x10','10x10']],
+    colore: [['bianco latte','Bianco latte'],['verde acqua','Verde acqua'],['ottanio','Ottanio'],['terracotta','Terracotta'],['blu mediterraneo','Blu']]
+  },
+  mattone: {
+    trama: [['a vista scialbato','Scialbato'],['faccia a vista','A vista'],['intonacato parziale','Parziale']],
+    colore: [['cotto chiaro','Cotto chiaro'],['cotto scuro','Cotto scuro'],['bianco calce','Calce']]
+  }
+};
+
+function renderFinishChips(boxId, opts, prefix) {
+  const box = document.getElementById(boxId);
+  if (!box || !opts) return;
+  box.innerHTML = `
+    <p class="hint" style="margin:8px 0 4px;">Trama</p>
+    <div class="chips">${opts.trama.map((t,i) => `<label class="chip"><input type="radio" name="${prefix}Trama" value="${t[0]}" ${i===0?'checked':''}> ${t[1]}</label>`).join('')}</div>
+    <p class="hint" style="margin:8px 0 4px;">Colore / tono</p>
+    <div class="chips">${opts.colore.map((t,i) => `<label class="chip"><input type="radio" name="${prefix}Colore" value="${t[0]}" ${i===0?'checked':''}> ${t[1]}</label>`).join('')}</div>`;
+}
+
+function toggleFinishDetails() {
+  const ff = document.getElementById('floorFamily')?.value || 'parquet';
+  const wf = document.getElementById('wallFamily')?.value || 'pittura';
+  renderFinishChips('floorDetails', FLOOR_OPTS[ff], 'floor');
+  renderFinishChips('wallDetails', WALL_OPTS[wf], 'wall');
+}
+
+function composedFinish(family, prefix) {
+  const trama = document.querySelector(`input[name="${prefix}Trama"]:checked`)?.value || '';
+  const colore = document.querySelector(`input[name="${prefix}Colore"]:checked`)?.value || '';
+  return [family, trama, colore].filter(Boolean).join(' — ');
 }
 
 document.getElementById('loginForm').onsubmit = async (e) => {
@@ -796,8 +888,8 @@ async function submitConfig(e) {
     brief: fd.get('brief') || '',
     budget: fd.get('budget') || 'medio',
     lighting: fd.get('lighting') || 'mista',
-    floorFinish: fd.get('floorFinish') || '',
-    wallFinish: fd.get('wallFinish') || '',
+    floorFinish: composedFinish(fd.get('floorFamily') || 'parquet', 'floor'),
+    wallFinish: composedFinish(fd.get('wallFamily') || 'pittura', 'wall'),
     customColor: fd.get('customColor') || '',
     styles: fd.getAll('style'),
     colors: fd.getAll('color'),
@@ -983,6 +1075,7 @@ function resetConfig() {
   document.getElementById('configForm').style.display = 'block';
   document.getElementById('configResult').style.display = 'none';
   toggleRoomExtras();
+  toggleFinishDetails();
 }
 
 if (token) {
