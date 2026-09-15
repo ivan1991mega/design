@@ -862,6 +862,8 @@ async function analyzeImage() {
       if (s.roomType) bits.push('Stanza: ' + s.roomType);
       if (s.fixtures && s.fixtures.length) bits.push('Rilevati: ' + s.fixtures.join(', '));
       if (s.note) bits.push(s.note);
+      if (s.layoutLock) bits.push(s.layoutLock.replace(/\n/g, ' · '));
+      if (s.openings && s.openings.length) bits.push('Aperture: ' + s.openings.map(o => (o.type || 'apertura') + ' su ' + (o.rel || o.wall)).join('; '));
       if (lastTextureRefs.length) bits.push('Texture dallo ZIP: ' + lastTextureRefs.map(t => t.role + ' ' + (t.filename || '')).join(', '));
       note.textContent = bits.join(' · ') || 'Controlla pavimento e pareti prima di generare.';
     }
@@ -886,6 +888,7 @@ async function generaRender() {
       floorFinish: document.getElementById('renderFloor')?.value || '',
       wallFinish: document.getElementById('renderWall')?.value || '',
       fixtures: lastSuggested?.fixtures || [],
+      layoutLock: lastSuggested?.layoutLock || '',
       textureRefs: lastTextureRefs,
       style: document.getElementById('renderStyle').value,
       lighting: document.getElementById('renderLighting').value,
