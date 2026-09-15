@@ -305,15 +305,21 @@ function inferDoor(size, openings, placed, hint) {
     else if (a.wall === 'x-' || a.wall === 'x+') add(a.wall, a.fromZ, a.fromZ + (a.sizeZ || a.width || 0));
   }
   const hintN = normName(hint || '');
-  const prefer = [];
-  if (/destra|right|\bx\+/.test(hintN)) prefer.push('x+');
-  if (/sinistra|left|\bx-/.test(hintN)) prefer.push('x-');
-  if (/fondo|finestra|window|\bz-/.test(hintN)) prefer.push('z-');
-  if (/ingresso|doccia|opposta|\bz\+/.test(hintN)) prefer.push('z+');
+  const shower = (placed || []).find((p) => /doccia|shower/.test(normName(p.name)));
+  const showerWall = shower?.wall;
   const winWall = (openings || []).find((o) => o.type === 'finestra')?.wall;
+  const opposite = { 'x-': 'x+', 'x+': 'x-', 'z-': 'z+', 'z+': 'z-' };
+  const prefer = [];
+  if (/lato|destra|right|\bx\+/.test(hintN) && !/doccia|shower|stessa/.test(hintN)) prefer.push('x+');
+  if (/lato|sinistra|left|\bx-/.test(hintN) && !/doccia|shower|stessa/.test(hintN)) prefer.push('x-');
+  if (/fondo|finestra|window|\bz-/.test(hintN)) prefer.push('z-');
+  if (showerWall) prefer.push(showerWall);
+  if (/ingresso|doccia|stessa|opposta|\bz\+/.test(hintN)) prefer.push(showerWall || 'z+');
+  if (winWall) prefer.push(opposite[winWall]);
   let best = null;
-  for (const wall of ['x+', 'z+', 'x-', 'z-']) {
+  for (const wall of [showerWall, 'z+', 'z-', 'x+', 'x-'].filter(Boolean)) {
     const w = walls[wall];
+    if (!w) continue;
     const occ = w.occ.slice().sort((a, b) => a[0] - b[0]);
     const merged = [];
     for (const s of occ) {
@@ -330,12 +336,12 @@ function inferDoor(size, openings, placed, hint) {
     for (const [s, e] of gaps) {
       const gapW = e - s;
       const doorW = Math.min(90, gapW > 100 ? 80 : gapW);
-      let start = s === 0 ? 0 : (e >= w.length - 1 ? e - doorW : s);
+      let start = s;
       if (start + doorW > e) start = Math.max(s, e - doorW);
       let score = Math.min(gapW, 130);
       if (prefer.includes(wall)) score += 90;
-      if (winWall && wall === winWall) score -= 20;
-      if ((placed || []).some((p) => /doccia|shower/.test(normName(p.name)) && p.wall === wall)) score -= 10;
+      if (showerWall && wall === showerWall) score += 80;
+      if (winWall && wall === winWall) score -= 40;
       if (s === 0 || e >= w.length - 1) score += 8;
       if (!best || score > best.score) best = { wall, start, doorW, score };
     }
@@ -554,7 +560,7 @@ function parseObjSummary(text, mtlText, doorHint) {
     win
       ? `FINESTRA: ${win.name} ${toHuman(win.width)} × h ${toHuman(win.height)}, davanzale ${toHuman(win.sill)}, a X=${toHuman(win.fromX)} sulla ${relWall(win.wall)}. Unica. Non spostarla.`
       : 'Nessuna finestra nel modello: non inventarne.',
-    ...openings.filter((a) => a.type === 'porta').map((a) => `PORTA ${a.inferred ? '(non era un oggetto SketchUp, ricavata dal vuoto in parete)' : a.name}: ${toHuman(a.width)} × h ${toHuman(a.height)} a X=${toHuman(a.fromX)} Z=${toHuman(a.fromZ)} sulla ${a.rel}. Fissa. Se è sulla parete sbagliata, indica la porta nel campo Porta.`),
+    ...openings.filter((a) => a.type === 'porta').map((a) => `PORTA ${a.inferred ? '(stessa parete della doccia/ingresso, ricavata dal vuoto)' : a.name}: ${toHuman(a.width)} × h ${toHuman(a.height)} a X=${toHuman(a.fromX)} Z=${toHuman(a.fromZ)} sulla ${a.rel}. STESSA PARETE della doccia, non sul lato. Fissa.`),
     'ELEMENTI FISSI (coordinate dall\'angolo origine, non rimescolare):',
     ...placed.slice(0, 20).map((a) => `- ${a.name} [${a.role}] ${a.rel || a.wall} | X ${toHuman(a.fromX)} Z ${toHuman(a.fromZ)} | ${toHuman(a.sizeX)}×${toHuman(a.sizeZ)} h ${toHuman(a.sizeY)}`),
     win
@@ -716,61 +722,69 @@ function surveyPng(mesh) {
   const X = (cm) => ox + cm * scale;
   const Z = (cm) => oy + cm * scale;
 
-  text(90, 20, 'PIANTA  ALTO  FINESTRA  BASSO  PORTA', 3, 40, 40, 45);
+  text(90, 20, 'PIANTA  ALTO E FINESTRA   BASSO E INGRESSO', 3, 40, 40, 45);
   fill(X(0), Z(0), X(bw), Z(bd), 250, 248, 242);
   stroke(X(0), Z(0), X(bw), Z(bd), 7, 30, 30, 35);
-  text(X(bw / 2) - 70, Z(0) + 8, 'FINESTRA', 2, 0, 110, 150);
-  text(X(bw / 2) - 50, Z(bd) - 22, 'INGRESSO', 2, 120, 50, 30);
+  text(X(8), Z(0) - 28, 'PARETE FINESTRA', 2, 0, 110, 150);
+  text(X(8), Z(bd) + 10, 'PARETE INGRESSO', 2, 120, 50, 30);
 
-  const drawItem = (a) => {
-    const lab = labelOf(a);
-    if (!lab && a.role === 'object') return;
-    const c = colorForPart(a.name, a.role, a.type);
+  const mergeByLabel = (list) => {
+    const map = new Map();
+    for (const a of list) {
+      const lab = labelOf(a);
+      if (!lab) continue;
+      const x0 = a.fromX || 0;
+      const z0 = a.fromZ || 0;
+      const x1 = x0 + Math.max(a.sizeX || a.width || 10, 8);
+      const z1 = z0 + Math.max(a.sizeZ || a.thick || 10, 8);
+      const cur = map.get(lab);
+      if (!cur) map.set(lab, { ...a, label: lab, fromX: x0, fromZ: z0, sizeX: x1 - x0, sizeZ: z1 - z0 });
+      else {
+        const nx0 = Math.min(cur.fromX, x0);
+        const nz0 = Math.min(cur.fromZ, z0);
+        const nx1 = Math.max(cur.fromX + cur.sizeX, x1);
+        const nz1 = Math.max(cur.fromZ + cur.sizeZ, z1);
+        cur.fromX = nx0; cur.fromZ = nz0; cur.sizeX = nx1 - nx0; cur.sizeZ = nz1 - nz0;
+      }
+    }
+    return [...map.values()];
+  };
+  const items = mergeByLabel([...(mesh.openings || []), ...(mesh.placed || [])]);
+  for (const a of items) {
+    const c = colorForPart(a.name, a.role, a.type || a.label);
     const x0 = X(a.fromX);
-    const z0 = Z(a.fromZ || 0);
-    const x1 = X(a.fromX + Math.max(a.sizeX || a.width || 10, 12));
-    const z1 = Z((a.fromZ || 0) + Math.max(a.sizeZ || a.thick || 10, 12));
+    const z0 = Z(a.fromZ);
+    const x1 = X(a.fromX + a.sizeX);
+    const z1 = Z(a.fromZ + a.sizeZ);
     fill(x0, z0, x1, z1, c[0], c[1], c[2]);
     stroke(x0, z0, x1, z1, 2, 20, 20, 25);
-    if (lab) text(x0 + 4, z0 + 4, lab, 2, 20, 20, 25);
-  };
-  for (const a of (mesh.openings || [])) drawItem(a);
-  for (const a of (mesh.placed || [])) drawItem(a);
+    text(x0 + 4, z0 + 4, a.label, 2, 20, 20, 25);
+  }
 
   const camX = X(bw / 2);
-  fill(camX - 16, Z(bd) + 8, camX + 16, Z(bd) + 22, 200, 40, 30);
-  fill(camX - 6, Z(bd) - 40, camX + 6, Z(bd), 200, 40, 30);
-  text(camX - 50, Z(bd) + 26, 'CAMERA', 2, 180, 30, 20);
+  fill(camX - 16, Z(bd) + 36, camX + 16, Z(bd) + 50, 200, 40, 30);
+  fill(camX - 6, Z(bd) - 36, camX + 6, Z(bd), 200, 40, 30);
+  text(camX - 50, Z(bd) + 54, 'CAMERA', 2, 180, 30, 20);
 
-  // Vista dalla camera: sinistra = Xmin, fondo = finestra, destra = Xmax
-  const vx0 = 80, vy0 = 760, vx1 = 920, vy1 = 1280;
+  const vx0 = 80, vy0 = 800, vx1 = 920, vy1 = 1320;
   fill(vx0, vy0, vx1, vy1, 250, 248, 242);
   stroke(vx0, vy0, vx1, vy1, 6, 30, 30, 35);
-  text(80, 730, 'VISTA CAMERA  DOCCIA VICINO  FINESTRA IN FONDO A SINISTRA  PORTA A DESTRA', 2, 40, 40, 45);
-  // far wall
-  fill(260, 780, 740, 980, 235, 233, 226);
-  stroke(260, 780, 740, 980, 4, 40, 40, 45);
-  const win = (mesh.openings || []).find((a) => a.type === 'finestra');
-  const winLeft = win ? 260 + (win.fromX / Math.max(bw, 1)) * 480 : 280;
-  const winW = win ? Math.max(80, (win.width / Math.max(bw, 1)) * 480) : 120;
-  fill(winLeft, 820, winLeft + winW, 960, 0, 170, 210);
-  stroke(winLeft, 820, winLeft + winW, 960, 3, 10, 80, 110);
-  text(winLeft + 8, 830, 'FINESTRA', 2, 255, 255, 255);
-  // left wall receding: shower near (bottom), lavabi farther
-  fill(90, 980, 280, 1260, 40, 90, 190);
-  text(100, 1100, 'DOCCIA', 3, 255, 255, 255);
-  fill(120, 860, 300, 980, 230, 200, 150);
-  text(130, 900, 'LAVABO', 2, 40, 40, 40);
-  fill(150, 800, 310, 860, 230, 200, 150);
-  text(160, 820, 'LAVABO', 2, 40, 40, 40);
-  // right wall: door near, wc/bidet farther toward window
-  fill(760, 980, 910, 1260, 140, 90, 50);
-  text(775, 1100, 'PORTA', 3, 255, 255, 255);
-  fill(700, 880, 820, 980, 250, 250, 250);
-  stroke(700, 880, 820, 980, 2, 80, 80, 80);
-  text(715, 910, 'WC', 3, 40, 40, 40);
-  fill(720, 820, 820, 880, 210, 210, 230);
-  text(730, 835, 'BIDET', 2, 40, 40, 40);
+  text(80, 770, 'FOTO DALLA CAMERA  VICINO IN BASSO  FINESTRA IN ALTO', 2, 40, 40, 45);
+  fill(300, vy0 + 30, 700, vy0 + 210, 235, 233, 226);
+  stroke(300, vy0 + 30, 700, vy0 + 210, 3, 40, 40, 45);
+  const sorted = items.slice().sort((a, b) => a.fromZ - b.fromZ);
+  for (const a of sorted) {
+    const t = Math.min(1, Math.max(0, (a.fromZ + a.sizeZ / 2) / Math.max(bd, 1)));
+    const mag = 0.42 + 0.7 * t;
+    const cx = vx0 + 70 + ((a.fromX + a.sizeX / 2) / Math.max(bw, 1)) * (vx1 - vx0 - 140);
+    const cy = vy0 + 50 + t * (vy1 - vy0 - 120);
+    const w = Math.max(70, Math.min(220, a.sizeX * scale * mag * 1.6));
+    const h = Math.max(50, Math.min(240, Math.max(a.sizeZ, 40) * scale * mag * 1.3));
+    const c = colorForPart(a.name, a.role, a.type || a.label);
+    fill(cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2, c[0], c[1], c[2]);
+    stroke(cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2, 3, 20, 20, 25);
+    text(cx - w / 2 + 6, cy - 8, a.label, 2, a.label === 'DOCCIA' || a.label === 'PORTA' ? 255 : 20, a.label === 'DOCCIA' || a.label === 'PORTA' ? 255 : 20, a.label === 'DOCCIA' || a.label === 'PORTA' ? 255 : 25);
+  }
 
   return encodePng(W, H, rgb);
 }
