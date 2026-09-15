@@ -139,7 +139,7 @@
           <div class="section">
             <label>Come lo immagini</label>
             <textarea id="briefField" name="brief" placeholder="Scrivi o detta: isola al centro, spa con sauna, terrazzo con pranzo all’aperto…"></textarea>
-            <button type="button" class="ghost mic" id="dictBtn" onclick="toggleDictation()">Detta</button>
+            <button type="button" class="ghost mic" id="dictBtn" onclick="toggleDictation('briefField','dictBtn')">Detta</button>
             <p class="hint" id="dictHint">Usa il microfono del telefono o del Mac. Serve Chrome o Safari e il permesso microfono.</p>
           </div>
 
@@ -403,6 +403,12 @@
           <input type="file" id="modelFile" accept=".obj,.stl,.gltf,.glb,.dae,.mtl" style="display:none" onchange="handleModelSelect()">
           <p class="hint" id="modelLabel"></p>
         </div>
+        <div class="section">
+          <label>Direttive sul modello 3D / SketchUp</label>
+          <textarea id="modelBrief" placeholder="Es. l’OBJ è il soggiorno in centimetri; ignora i layer di cantiere; tieni muri e finestre; sostituisci i cubi placeholder dei mobili; inquadratura dalla porta verso la finestra ovest."></textarea>
+          <button type="button" class="ghost mic" id="modelDictBtn" onclick="toggleDictation('modelBrief','modelDictBtn')">Detta direttive</button>
+          <p class="hint">Cosa rispettare, cosa togliere, unità di misura, punto di vista. Vale per analisi e render.</p>
+        </div>
         <div id="imagePreview" style="display:none; margin-top:14px;">
           <img id="previewImg" class="preview">
         </div>
@@ -607,11 +613,12 @@ if (dropZone && mixedFiles) {
 
 let recognition = null;
 let dictating = false;
-function toggleDictation() {
+function toggleDictation(fieldId, btnId) {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const btn = document.getElementById('dictBtn');
+  const btn = document.getElementById(btnId || 'dictBtn');
   const hint = document.getElementById('dictHint');
-  const field = document.getElementById('briefField');
+  const field = document.getElementById(fieldId || 'briefField');
+  if (!field) return;
   if (!SR) {
     if (hint) hint.textContent = 'Dettato non disponibile su questo browser. Usa Chrome o Safari.';
     return;
@@ -657,6 +664,8 @@ async function analyzeImage() {
   const fd = new FormData();
   if (currentImage) fd.append('image', currentImage);
   if (currentModel) fd.append('model', currentModel);
+  const modelBrief = (document.getElementById('modelBrief')?.value || '').trim();
+  if (modelBrief) fd.append('modelBrief', modelBrief);
   const res = await fetch('/api/renders/analyze-image', {
     method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: fd
   });
@@ -683,6 +692,7 @@ async function generaRender() {
       clientId: currentClient || undefined,
       analysis: currentAnalysis,
       sourceImage: currentSourceImage,
+      modelBrief: (document.getElementById('modelBrief')?.value || '').trim(),
       style: document.getElementById('renderStyle').value,
       lighting: document.getElementById('renderLighting').value,
       colors: document.getElementById('renderColors').value
