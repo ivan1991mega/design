@@ -39,15 +39,76 @@ const storage = multer.diskStorage({
   }
 });
 
+const IMAGE_MIME = ['image/jpeg', 'image/png', 'image/webp'];
+const MODEL_EXT = ['.obj', '.mtl', '.stl', '.gltf', '.glb', '.dae'];
+
 const upload = multer({
   storage,
-  limits: { fileSize: 20 * 1024 * 1024 },
+  limits: { fileSize: 40 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    const allowed = ['image/jpeg', 'image/png', 'image/webp'];
-    if (allowed.includes(file.mimetype)) cb(null, true);
-    else cb(new Error('Tipo file non supportato (usa JPG, PNG o WebP)'));
+    const ext = path.extname(file.originalname || '').toLowerCase();
+    if (IMAGE_MIME.includes(file.mimetype) || MODEL_EXT.includes(ext)) cb(null, true);
+    else cb(new Error('Formato non supportato. Usa JPG/PNG/WebP oppure OBJ/STL/glTF/GLB/DAE (da SketchUp esporta OBJ).'));
   }
 });
+
+const analyzeUpload = upload.fields([
+  { name: 'image', maxCount: 1 },
+  { name: 'model', maxCount: 1 }
+]);
+
+function parseObjSummary(text) {
+  const verts = [];
+  const names = new Set();
+  const mats = new Set();
+  let faces = 0;
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (line.startsWith('v ')) {
+      const p = line.split(/\s+/);
+      const x = Number(p[1]), y = Number(p[2]), z = Number(p[3]);
+      if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) verts.push([x, y, z]);
+    } else if (line.startsWith('f ')) faces += 1;
+    else if (line.startsWith('o ') || line.startsWith('g ')) names.add(line.slice(2).trim());
+    else if (line.startsWith('usemtl ')) mats.add(line.slice(7).trim());
+  }
+  if (!verts.length) return { format: 'obj', objects: [...names], materials: [...mats], faces, note: 'OBJ senza vertici leggibili' };
+  let min = [Infinity, Infinity, Infinity];
+  let max = [-Infinity, -Infinity, -Infinity];
+  for (const [x, y, z] of verts) {
+    if (x < min[0]) min[0] = x; if (y < min[1]) min[1] = y; if (z < min[2]) min[2] = z;
+    if (x > max[0]) max[0] = x; if (y > max[1]) max[1] = y; if (z > max[2]) max[2] = z;
+  }
+  const size = [max[0] - min[0], max[1] - min[1], max[2] - min[2]];
+  const axis = [...size].sort((a, b) => b - a);
+  const unitsGuess = axis[0] > 80 ? 'centimetri o millimetri' : axis[0] > 8 ? 'metri' : 'unità SketchUp';
+  return {
+    format: 'obj',
+    vertices: verts.length,
+    faces,
+    objects: [...names].slice(0, 40),
+    materials: [...mats].slice(0, 30),
+    bbox: {
+      width: Number(size[0].toFixed(3)),
+      depth: Number(size[2].toFixed(3)),
+      height: Number(size[1].toFixed(3))
+    },
+    unitsGuess,
+    proportions: `ingombro ${size[0].toFixed(2)} x ${size[2].toFixed(2)} x h ${size[1].toFixed(2)}`
+  };
+}
+
+function parseStlSummary(buf) {
+  const ascii = buf.toString('utf8', 0, Math.min(buf.length, 80));
+  if (ascii.startsWith('solid') && !ascii.includes('\0')) {
+    const text = buf.toString('utf8');
+    const n = (text.match(/facet normal/g) || []).length;
+    return { format: 'stl-ascii', faces: n };
+  }
+  if (buf.length < 84) return { format: 'stl', note: 'file troppo corto' };
+  const faces = buf.readUInt32LE(80);
+  return { format: 'stl-binary', faces };
+}
 
 function imageModel() {
   return process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2';
@@ -189,79 +250,132 @@ router.post('/upload', upload.single('image'), async (req, res, next) => {
   }
 });
 
-router.post('/analyze-image', upload.single('image'), async (req, res, next) => {
+router.post('/analyze-image', analyzeUpload, async (req, res, next) => {
   try {
-    if (!req.file) return res.status(400).json({ success: false, error: 'Immagine non caricata' });
+    const imageFile = req.files?.image?.[0] || (req.file?.mimetype?.startsWith('image/') ? req.file : null);
+    const modelFile = req.files?.model?.[0] || (!imageFile ? req.file : null);
+    if (!imageFile && !modelFile) {
+      return res.status(400).json({ success: false, error: 'Carica una foto PNG/JPG e/o un modello OBJ/STL/glTF esportato da SketchUp' });
+    }
 
-    const imageBuffer = await fs.readFile(req.file.path);
-    const base64Image = imageBuffer.toString('base64');
-    const mimeType = req.file.mimetype || 'image/jpeg';
+    const ext = modelFile ? path.extname(modelFile.originalname || '').toLowerCase() : '';
+    if (ext === '.skp') {
+      return res.status(400).json({ success: false, error: 'Il file .skp di SketchUp non è leggibile. Esporta in OBJ (File → Esporta → Oggetto 3D) e ricarica.' });
+    }
 
-    const openai = getOpenAI();
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      max_tokens: 1000,
-      messages: [
-        {
+    let mesh = null;
+    if (modelFile && ext === '.obj') {
+      const text = await fs.readFile(modelFile.path, 'utf8');
+      mesh = parseObjSummary(text);
+    } else if (modelFile && ext === '.stl') {
+      mesh = parseStlSummary(await fs.readFile(modelFile.path));
+    } else if (modelFile && (ext === '.gltf' || ext === '.glb' || ext === '.dae')) {
+      mesh = { format: ext.slice(1), file: modelFile.originalname, bytes: modelFile.size };
+    }
+
+    let vision = '';
+    if (imageFile) {
+      const imageBuffer = await fs.readFile(imageFile.path);
+      const base64Image = imageBuffer.toString('base64');
+      const mimeType = imageFile.mimetype || 'image/jpeg';
+      const openai = getOpenAI();
+      const response = await openai.chat.completions.create({
+        model: 'gpt-4o',
+        max_tokens: 1600,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64Image}` } },
+              {
+                type: 'text',
+                text: `Sei un architetto. Analizza QUESTO spazio come base vincolante per un render fotorealistico.
+Non inventare una planimetria diversa.
+Elenca in italiano:
+1. Tipo di ambiente e destinazione
+2. Geometria: pianta percepita, rapporti LxPxH, aperture (porte/finestre) e dove stanno
+3. Layout fisso: muri, pilastri, scale, soffitto, eventuali volumi che NON si devono spostare
+4. Arredi visibili e posizione relativa (destra/sinistra/centro/fondo)
+5. Materiali e finiture già presenti da rispettare o sostituire
+6. Luce: direzione, temperatura, ombre
+7. Cosa è un vincolo strutturale e cosa è modificabile
+8. Istruzioni precise per un motore di render: stessa inquadratura, stesse proporzioni, stesso punto di fuga
+${mesh ? `Dati mesh allegata: ${JSON.stringify(mesh)} — usali per quote e oggetti nominati.` : ''}`
+              }
+            ]
+          }
+        ]
+      });
+      vision = response.choices?.[0]?.message?.content || '';
+    } else if (mesh) {
+      const openai = getOpenAI();
+      const response = await openai.chat.completions.create({
+        model: 'gpt-4o',
+        max_tokens: 1200,
+        messages: [{
           role: 'user',
-          content: [
-            {
-              type: 'image_url',
-              image_url: { url: `data:${mimeType};base64,${base64Image}` }
-            },
-            {
-              type: 'text',
-              text: `Analizza questa immagine di interior design in dettaglio. Identifica:
-1. Tipo di stanza
-2. Stile principale
-3. Colori dominanti
-4. Materiali visibili
-5. Dimensioni stimate
-6. Illuminazione
-7. Descrizione generale
+          content: `Da questo modello 3D esportato da SketchUp/CAD ricostruisci in italiano una lettura architettonica vincolante per un render.
+Mesh: ${JSON.stringify(mesh)}
+Deduci destinazione d'uso dai nomi oggetti, proporzioni della bounding box, possibili muri/pavimento.
+Scrivi layout, quote relative, cosa non va inventato.`
+        }]
+      });
+      vision = response.choices?.[0]?.message?.content || '';
+    }
 
-Rispondi in italiano, in formato chiaro e professionale.`
-            }
-          ]
-        }
-      ]
+    const analysis = [
+      vision,
+      mesh ? `\n\nDATI MODELLO 3D\n${JSON.stringify(mesh, null, 2)}` : ''
+    ].join('').trim();
+
+    res.json({
+      success: true,
+      data: {
+        analysis,
+        mesh,
+        sourceImage: imageFile ? imageFile.filename : null,
+        sourceModel: modelFile ? modelFile.filename : null
+      }
     });
-
-    const analysis = response.choices?.[0]?.message?.content || '';
-    await fs.unlink(req.file.path).catch(() => {});
-
-    res.json({ success: true, data: { analysis } });
   } catch (error) {
-    if (req.file) await fs.unlink(req.file.path).catch(() => {});
     next(error);
   }
 });
 
 router.post('/generate-render', async (req, res, next) => {
   try {
-    const { clientId, analysis, style, lighting, colors } = req.body;
-    if (!clientId || !analysis) {
-      return res.status(400).json({ success: false, error: 'Dati mancanti (clientId, analysis)' });
+    const { clientId, analysis, style, lighting, colors, sourceImage } = req.body;
+    if (!analysis) {
+      return res.status(400).json({ success: false, error: 'Manca l\'analisi del file' });
     }
 
-    const client = await Client.findOne({ _id: clientId, adminId: req.adminId });
-    if (!client) return res.status(404).json({ success: false, error: 'Cliente non trovato' });
+    const client = await ensureClient(req.adminId, clientId);
+    const refs = [];
+    if (sourceImage) {
+      const p = path.join(UPLOADS_DIR, path.basename(sourceImage));
+      try {
+        await fs.access(p);
+        refs.push(p);
+      } catch {}
+    }
 
-    const prompt = `Professional photorealistic interior design render.
-Analysis: ${String(analysis).slice(0, 1200)}
-Style: ${style || 'contemporary'}
-Lighting: ${lighting || 'natural and artificial'}
-Colors: ${colors || 'neutral'}
-High quality photography, realistic textures, professional lighting.`;
+    const prompt = `Rebuild this exact space as a photorealistic architectural photograph.
+Follow the survey/analysis as constraints. Do NOT change room shape, window/door positions, camera angle or furniture layout unless asked.
+Analysis:
+${String(analysis).slice(0, 2500)}
+Requested style overlay: ${style || 'keep existing character'}
+Lighting: ${lighting || 'keep existing light direction'}
+Colors/materials overlay: ${colors || 'keep existing materials unless specified'}
+Same proportions and vanishing points as the source. No text, no watermark, no people.`;
 
-    const item = await generateInteriorImage(prompt);
+    const item = await generateInteriorImage(prompt, refs);
     const { imageName, imageUrl } = await saveGeneratedImage(item, 'render');
 
     const render = await Render.create({
-      clientId,
+      clientId: client._id,
       adminId: req.adminId,
       title: `Render AI - ${new Date().toLocaleDateString('it-IT')}`,
-      description: 'Render generato da immagine analizzata',
+      description: 'Render da rilievo foto/modello 3D',
       imageUrl,
       imageFile: imageName,
       style: style || 'contemporaneo',
