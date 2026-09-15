@@ -7,6 +7,7 @@ const RenderSchema = new mongoose.Schema({
   description: String,
   imageUrl: { type: String, required: true },
   imageFile: String,
+  gridFileId: { type: mongoose.Schema.Types.ObjectId },
   room: String,
   style: String,
   materials: [String],
