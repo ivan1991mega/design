@@ -56,6 +56,19 @@ app.use(cors({
 
 app.use(express.static(publicDir));
 app.use('/uploads', express.static(uploadsDir));
+app.get('/uploads/:filename', async (req, res, next) => {
+  try {
+    if (!mongoose.connection?.db) return res.status(404).end();
+    const filename = path.basename(req.params.filename);
+    const bucket = new mongoose.mongo.GridFSBucket(mongoose.connection.db, { bucketName: 'renders' });
+    const files = await bucket.find({ filename }).toArray();
+    if (!files.length) return res.status(404).end();
+    res.type('png');
+    bucket.openDownloadStreamByName(filename).on('error', next).pipe(res);
+  } catch (err) {
+    next(err);
+  }
+});
 
 app.use('/api/admin', adminRoutes);
 app.use('/api/clients', clientsRoutes);
