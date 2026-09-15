@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="it">
 <head>
@@ -120,6 +121,12 @@
                 <option value="bagno">Bagno</option>
                 <option value="camera">Camera</option>
                 <option value="ufficio">Studio</option>
+                <option value="wellness">Zona wellness / spa</option>
+                <option value="palestra">Home gym</option>
+                <option value="terrazzo">Terrazzo</option>
+                <option value="giardino">Giardino</option>
+                <option value="piscina">Piscina</option>
+                <option value="patio">Patio</option>
                 <option value="altro">Altro</option>
               </select>
               <div class="field-error">Scegli il tipo di stanza.</div>
@@ -128,7 +135,7 @@
 
           <div class="section">
             <label>Come lo immagini</label>
-            <textarea name="brief" placeholder="Es. isola al centro con cappa sospesa, cucina a L senza pensili, colonna forni a destra. Oppure: sanitari sospesi, lavabo doppio, box walk-in, rubinetteria nera opaca."></textarea>
+            <textarea name="brief" placeholder="Es. isola al centro con cappa sospesa… spa con sauna e vasca idromassaggio… palestra con rack e specchi… terrazzo con pranzo all’aperto e verdure in vaso… piscina a sfioro con lettini."></textarea>
           </div>
 
           <div class="grid-2">
@@ -220,6 +227,10 @@
                 <option value="cotto fatto a mano toscano">Cotto artigianale</option>
                 <option value="microcemento continuo tono sabbia">Microcemento sabbia</option>
                 <option value="terracotta smaltata irregolare">Terracotta smaltata</option>
+                <option value="decking in legno teak per esterni">Decking teak</option>
+                <option value="gres per esterni effetto pietra antiscivolo">Gres esterno pietra</option>
+                <option value="pietra naturale da giardino">Pietra giardino</option>
+                <option value="erba e camminamenti in pietra">Erba e camminamenti</option>
               </select>
               <div class="file" style="margin-top:8px;"><input type="file" name="floorTexture" accept="image/*"></div>
               <p class="hint">Foto catalogo pavimento, facoltativa</p>
@@ -270,6 +281,46 @@
               <label class="chip"><input type="checkbox" name="fixture" value="cucina a L senza pensili"> A L senza pensili</label>
               <label class="chip"><input type="checkbox" name="fixture" value="colonna forni"> Colonna forni</label>
               <label class="chip"><input type="checkbox" name="fixture" value="snack bar"> Snack</label>
+            </div>
+          </div>
+
+          <div id="wellnessExtra" class="section room-extra">
+            <label>Zona wellness</label>
+            <div class="chips">
+              <label class="chip"><input type="checkbox" name="fixture" value="sauna finlandese in legno"> Sauna</label>
+              <label class="chip"><input type="checkbox" name="fixture" value="hammam / bagno turco"> Hammam</label>
+              <label class="chip"><input type="checkbox" name="fixture" value="vasca idromassaggio"> Idromassaggio</label>
+              <label class="chip"><input type="checkbox" name="fixture" value="vasca fredda ice bath"> Ice bath</label>
+              <label class="chip"><input type="checkbox" name="fixture" value="doccia emozionale"> Doccia emozionale</label>
+              <label class="chip"><input type="checkbox" name="fixture" value="lettino relax e zona cromoterapia"> Relax / cromoterapia</label>
+              <label class="chip"><input type="checkbox" name="fixture" value="pareti in pietra umida e legno termotrattato"> Pietra e legno</label>
+            </div>
+          </div>
+
+          <div id="palestraExtra" class="section room-extra">
+            <label>Home gym</label>
+            <div class="chips">
+              <label class="chip"><input type="checkbox" name="fixture" value="rack squat e bilanciere"> Rack</label>
+              <label class="chip"><input type="checkbox" name="fixture" value="tapis roulant"> Tapis</label>
+              <label class="chip"><input type="checkbox" name="fixture" value="bike o rower"> Bike / rower</label>
+              <label class="chip"><input type="checkbox" name="fixture" value="zona pesi liberi e kettlebell"> Pesi liberi</label>
+              <label class="chip"><input type="checkbox" name="fixture" value="parete specchi e pavimento in gomma"> Specchi e gomma</label>
+              <label class="chip"><input type="checkbox" name="fixture" value="zona stretching e yoga"> Yoga</label>
+            </div>
+          </div>
+
+          <div id="esternoExtra" class="section room-extra">
+            <label>Spazio esterno</label>
+            <div class="chips">
+              <label class="chip"><input type="checkbox" name="fixture" value="zona pranzo outdoor"> Pranzo outdoor</label>
+              <label class="chip"><input type="checkbox" name="fixture" value="lounge con divani da esterno"> Lounge</label>
+              <label class="chip"><input type="checkbox" name="fixture" value="pergola o tende da sole"> Pergola</label>
+              <label class="chip"><input type="checkbox" name="fixture" value="cucina esterna barbecue"> BBQ / cucina</label>
+              <label class="chip"><input type="checkbox" name="fixture" value="vasche e piante mediterranee"> Piante</label>
+              <label class="chip"><input type="checkbox" name="fixture" value="illuminazione da giardino calda"> Luci giardino</label>
+              <label class="chip"><input type="checkbox" name="fixture" value="piscina a sfioro con lettini"> Piscina a sfioro</label>
+              <label class="chip"><input type="checkbox" name="fixture" value="deck in legno e pietra naturale"> Deck legno/pietra</label>
+              <label class="chip"><input type="checkbox" name="fixture" value="camino outdoor"> Camino outdoor</label>
             </div>
           </div>
 
@@ -370,8 +421,12 @@ let currentViewIndex = 0;
 
 function toggleRoomExtras() {
   const room = document.getElementById('roomType').value;
-  document.getElementById('bagnoExtra').style.display = room === 'bagno' ? 'block' : 'none';
-  document.getElementById('cucinaExtra').style.display = room === 'cucina' ? 'block' : 'none';
+  const show = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? 'block' : 'none'; };
+  show('bagnoExtra', room === 'bagno');
+  show('cucinaExtra', room === 'cucina');
+  show('wellnessExtra', room === 'wellness');
+  show('palestraExtra', room === 'palestra');
+  show('esternoExtra', ['terrazzo', 'giardino', 'piscina', 'patio'].includes(room));
 }
 
 document.getElementById('loginForm').onsubmit = async (e) => {
@@ -568,34 +623,74 @@ async function submitConfig(e) {
     showConfigBanner(missing);
     return;
   }
-  const send = new FormData();
-  const clientId = document.getElementById('clientSelectConfig').value;
-  if (clientId) send.append('clientId', clientId);
-  send.append('roomType', fd.get('room'));
-  send.append('size', fd.get('size') || 'medio');
-  send.append('sqm', fd.get('sqm') || '');
-  send.append('brief', fd.get('brief') || '');
-  send.append('budget', fd.get('budget'));
-  send.append('lighting', fd.get('lighting') || 'mista');
-  send.append('floorFinish', fd.get('floorFinish') || '');
-  send.append('wallFinish', fd.get('wallFinish') || '');
-  send.append('customColor', fd.get('customColor') || '');
-  send.append('styles', JSON.stringify(fd.getAll('style')));
-  send.append('colors', JSON.stringify(fd.getAll('color')));
-  send.append('views', JSON.stringify(fd.getAll('view')));
-  send.append('fixtures', JSON.stringify(fd.getAll('fixture')));
   const floor = form.querySelector('[name="floorTexture"]').files[0];
   const wall = form.querySelector('[name="wallTexture"]').files[0];
   const plan = form.querySelector('[name="planImage"]').files[0];
-  if (floor) send.append('floorTexture', floor);
-  if (wall) send.append('wallTexture', wall);
-  if (plan) send.append('planImage', plan);
+  let clientId = document.getElementById('clientSelectConfig').value;
+  if (!clientId) {
+    const first = [...document.getElementById('clientSelectConfig').options].find(o => o.value);
+    if (first) clientId = first.value;
+  }
+  if (!clientId) {
+    const created = await fetch('/api/clients', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Studio / prove' })
+    }).then(r => r.json()).catch(() => null);
+    if (created && created.success && created.data && created.data._id) {
+      clientId = created.data._id;
+      await loadClients();
+      const sel = document.getElementById('clientSelectConfig');
+      if (sel) sel.value = clientId;
+    }
+  }
+  if (!clientId) {
+    markField('field-client', 'Crea un cliente nella tab Clienti e selezionalo.');
+    showConfigBanner(['Cliente — il server attuale lo richiede ancora. Tab Clienti → Nuovo cliente.']);
+    return;
+  }
+  const payload = {
+    clientId: clientId || undefined,
+    roomType: fd.get('room') || 'salotto',
+    room: fd.get('room') || 'salotto',
+    size: fd.get('size') || 'medio',
+    sqm: fd.get('sqm') || '',
+    brief: fd.get('brief') || '',
+    budget: fd.get('budget') || 'medio',
+    lighting: fd.get('lighting') || 'mista',
+    floorFinish: fd.get('floorFinish') || '',
+    wallFinish: fd.get('wallFinish') || '',
+    customColor: fd.get('customColor') || '',
+    styles: fd.getAll('style'),
+    colors: fd.getAll('color'),
+    views: fd.getAll('view'),
+    fixtures: fd.getAll('fixture'),
+    materials: [fd.get('floorFinish'), fd.get('wallFinish')].filter(Boolean)
+  };
 
   form.style.display = 'none';
   document.getElementById('configLoading').style.display = 'block';
-  const res = await fetch('/api/renders/configure-environment', {
-    method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: send
-  });
+
+  let res;
+  if (floor || wall || plan) {
+    const send = new FormData();
+    Object.entries(payload).forEach(([k, v]) => {
+      if (v == null || v === '') return;
+      send.append(k, Array.isArray(v) ? JSON.stringify(v) : v);
+    });
+    if (floor) send.append('floorTexture', floor);
+    if (wall) send.append('wallTexture', wall);
+    if (plan) send.append('planImage', plan);
+    res = await fetch('/api/renders/configure-environment', {
+      method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: send
+    });
+  } else {
+    res = await fetch('/api/renders/configure-environment', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+  }
   const data = await res.json();
   if (data.success) {
     configViews = data.data.views?.length ? data.data.views : [{ view: 'frontale', renderUrl: data.data.renderUrl }];
@@ -665,6 +760,10 @@ async function loadArchive() {
   const box = document.getElementById('archiveList');
   if (!box) return;
   const res = await fetch('/api/renders', { headers: { Authorization: 'Bearer ' + token } });
+  if (res.status === 404) {
+    box.innerHTML = '<p class="hint">Archivio non attivo: aggiorna routes/renders.js su GitHub (manca GET /api/renders).</p>';
+    return;
+  }
   const data = await res.json();
   if (!data.success) { box.innerHTML = '<p class="hint">Archivio non disponibile</p>'; return; }
   if (!data.data.length) { box.innerHTML = '<p class="hint">Nessun render salvato ancora.</p>'; return; }
