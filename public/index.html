@@ -368,8 +368,13 @@
     <div id="archive" class="tab-content">
       <div class="card">
         <h2 style="margin-bottom:8px;">Archivio render</h2>
-        <p class="hint" style="margin-bottom:16px;">Tutti i render salvati. Scaricali in PNG. Su Railway i file spariscono al redeploy: scarica subito quelli importanti.</p>
-        <button class="ghost" type="button" onclick="loadArchive()" style="margin-bottom:14px;">Aggiorna</button>
+        <p class="hint" style="margin-bottom:16px;">I PNG restano su MongoDB, anche dopo un deploy Railway. Spunta più render per scaricarli in zip o cancellarli.</p>
+        <div class="chips" style="margin-bottom:14px;">
+          <button class="ghost" type="button" onclick="loadArchive()">Aggiorna</button>
+          <button class="ghost" type="button" onclick="toggleSelectAll()">Seleziona tutti</button>
+          <button type="button" onclick="downloadSelected()">Scarica selezionati</button>
+          <button class="danger" type="button" onclick="deleteSelected()">Elimina selezionati</button>
+        </div>
         <div id="archiveList" class="grid"></div>
       </div>
     </div>
@@ -905,10 +910,12 @@ async function loadArchive() {
     const card = document.createElement('div');
     card.className = 'card';
     const when = r.createdAt ? new Date(r.createdAt).toLocaleString('it-IT') : '';
+    const clientName = r.clientId && r.clientId.name ? r.clientId.name : 'senza cliente';
     card.innerHTML = `
+      <label class="chip" style="margin-bottom:8px;"><input type="checkbox" class="arch-check" value="${r._id}"> Seleziona</label>
       <img src="${r.imageUrl}" class="preview" alt="" style="margin-bottom:10px;">
       <h3>${r.title || 'Render'}</h3>
-      <p class="hint">${r.room || ''} ${when}</p>
+      <p class="hint">${clientName} · ${r.room || ''} ${when}</p>
       <button type="button" data-id="${r._id}" onclick="downloadRender(this.dataset.id, 'render-HQ.png')">Download HQ</button>
       <button type="button" class="danger" data-id="${r._id}" onclick="deleteRender(this.dataset.id)">Elimina</button>`;
     box.appendChild(card);
@@ -918,6 +925,49 @@ async function loadArchive() {
 async function deleteRender(id) {
   if (!confirm('Eliminare questo render?')) return;
   await fetch('/api/renders/' + id, { method: 'DELETE', headers: { Authorization: 'Bearer ' + token } });
+  loadArchive(); loadStats();
+}
+
+function selectedArchiveIds() {
+  return [...document.querySelectorAll('.arch-check:checked')].map(el => el.value);
+}
+
+function toggleSelectAll() {
+  const boxes = [...document.querySelectorAll('.arch-check')];
+  const allOn = boxes.length && boxes.every(b => b.checked);
+  boxes.forEach(b => { b.checked = !allOn; });
+}
+
+async function downloadSelected() {
+  const ids = selectedArchiveIds();
+  if (!ids.length) { alert('Spunta almeno un render'); return; }
+  const res = await fetch('/api/renders/bulk-zip', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    alert(err.error || 'Zip non disponibile');
+    return;
+  }
+  const blob = await res.blob();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'renders-archivio.zip';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+async function deleteSelected() {
+  const ids = selectedArchiveIds();
+  if (!ids.length) { alert('Spunta almeno un render'); return; }
+  if (!confirm('Eliminare ' + ids.length + ' render?')) return;
+  await fetch('/api/renders/bulk-delete', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids })
+  });
   loadArchive(); loadStats();
 }
 function playViews() {
