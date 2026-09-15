@@ -640,10 +640,28 @@ function colorForPart(name, role, type) {
   return [170, 170, 175];
 }
 
+const GLYPH = {
+  A: '0110010010111111000110001', B: '1111010001111101000111110',
+  C: '0111010000100001000001110', D: '1110010001100011000111100',
+  E: '1111110000111101000011111', F: '1111110000111101000010000',
+  G: '0111010000101111000101110', H: '1000110001111111000110001',
+  I: '1111100100001000010011111', L: '1000010000100001000011111',
+  M: '1000111011101011000110001', N: '1000111001101011001110001',
+  O: '0111010001100011000101110', P: '1111010001111101000010000',
+  R: '1111010001111101000110001', S: '0111110000011100000111110',
+  T: '1111100100001000010000100', V: '1000110001010100101000100',
+  W: '1000110001101011101110001', Z: '1111100010001000100011111',
+  ' ': '0000000000000000000000000'
+};
+function glyphRow(ch, row) {
+  const bits = GLYPH[ch] || GLYPH[' '];
+  return bits.slice(row * 5, row * 5 + 5);
+}
+
 function surveyPng(mesh) {
-  const W = 900;
-  const H = 1100;
-  const rgb = Buffer.alloc(W * H * 3, 236);
+  const W = 1000;
+  const H = 1400;
+  const rgb = Buffer.alloc(W * H * 3, 232);
   const set = (x, y, r, g, b) => {
     if (x < 0 || y < 0 || x >= W || y >= H) return;
     const i = (y * W + x) * 3;
@@ -662,13 +680,35 @@ function surveyPng(mesh) {
     fill(x0, y0, x0 + t, y1, r, g, b);
     fill(x1 - t, y0, x1, y1, r, g, b);
   };
+  const text = (x, y, str, s, r, g, b) => {
+    const up = String(str || '').toUpperCase().replace(/[^A-Z ]/g, ' ');
+    let cx = x;
+    for (const ch of up) {
+      for (let row = 0; row < 7; row++) {
+        const bits = glyphRow(ch, row);
+        for (let col = 0; col < 5; col++) {
+          if (bits[col] === '1') fill(cx + col * s, y + row * s, cx + col * s + s, y + row * s + s, r, g, b);
+        }
+      }
+      cx += 6 * s;
+    }
+  };
+  const labelOf = (a) => {
+    const n = normName(a.name + ' ' + (a.type || '') + ' ' + (a.role || ''));
+    if (/(finestra|window)/.test(n)) return 'FINESTRA';
+    if (/(porta|door)/.test(n)) return 'PORTA';
+    if (/(doccia|shower)/.test(n)) return 'DOCCIA';
+    if (/(lavabo|sink)/.test(n)) return 'LAVABO';
+    if (/bidet/.test(n)) return 'BIDET';
+    if (/(wc|cassetta|sospesi|toilet)/.test(n)) return 'WC';
+    return '';
+  };
 
   const bw = mesh.bbox?.width || 300;
   const bd = mesh.bbox?.depth || 300;
-  const bh = mesh.bbox?.height || 270;
-  const left = 70;
-  const top = 60;
-  const planW = 760;
+  const left = 90;
+  const top = 70;
+  const planW = 820;
   const planH = 620;
   const scale = Math.min(planW / Math.max(bw, 1), planH / Math.max(bd, 1));
   const ox = left + (planW - bw * scale) / 2;
@@ -676,43 +716,61 @@ function surveyPng(mesh) {
   const X = (cm) => ox + cm * scale;
   const Z = (cm) => oy + cm * scale;
 
+  text(90, 20, 'PIANTA  ALTO  FINESTRA  BASSO  PORTA', 3, 40, 40, 45);
   fill(X(0), Z(0), X(bw), Z(bd), 250, 248, 242);
-  stroke(X(0), Z(0), X(bw), Z(bd), 6, 40, 40, 45);
+  stroke(X(0), Z(0), X(bw), Z(bd), 7, 30, 30, 35);
+  text(X(bw / 2) - 70, Z(0) + 8, 'FINESTRA', 2, 0, 110, 150);
+  text(X(bw / 2) - 50, Z(bd) - 22, 'INGRESSO', 2, 120, 50, 30);
 
-  for (const a of (mesh.openings || [])) {
+  const drawItem = (a) => {
+    const lab = labelOf(a);
+    if (!lab && a.role === 'object') return;
     const c = colorForPart(a.name, a.role, a.type);
-    fill(X(a.fromX), Z(a.fromZ || 0), X(a.fromX + a.sizeX), Z((a.fromZ || 0) + a.sizeZ), c[0], c[1], c[2]);
-  }
-  for (const a of (mesh.placed || [])) {
-    const c = colorForPart(a.name, a.role);
-    fill(X(a.fromX), Z(a.fromZ), X(a.fromX + Math.max(a.sizeX, 8)), Z(a.fromZ + Math.max(a.sizeZ, 8)), c[0], c[1], c[2]);
-  }
+    const x0 = X(a.fromX);
+    const z0 = Z(a.fromZ || 0);
+    const x1 = X(a.fromX + Math.max(a.sizeX || a.width || 10, 12));
+    const z1 = Z((a.fromZ || 0) + Math.max(a.sizeZ || a.thick || 10, 12));
+    fill(x0, z0, x1, z1, c[0], c[1], c[2]);
+    stroke(x0, z0, x1, z1, 2, 20, 20, 25);
+    if (lab) text(x0 + 4, z0 + 4, lab, 2, 20, 20, 25);
+  };
+  for (const a of (mesh.openings || [])) drawItem(a);
+  for (const a of (mesh.placed || [])) drawItem(a);
 
   const camX = X(bw / 2);
-  const camY = Z(bd) + 18;
-  fill(camX - 14, camY, camX + 14, camY + 10, 200, 50, 40);
-  fill(camX - 8, Z(bd) - 28, camX + 8, Z(bd) - 4, 200, 50, 40);
+  fill(camX - 16, Z(bd) + 8, camX + 16, Z(bd) + 22, 200, 40, 30);
+  fill(camX - 6, Z(bd) - 40, camX + 6, Z(bd), 200, 40, 30);
+  text(camX - 50, Z(bd) + 26, 'CAMERA', 2, 180, 30, 20);
 
-  const elevTop = 720;
-  const eScale = Math.min(760 / Math.max(bw, 1), 280 / Math.max(bh, 1));
-  const eox = 70 + (760 - bw * eScale) / 2;
-  const eoy = elevTop;
-  fill(eox, eoy, eox + bw * eScale, eoy + bh * eScale, 248, 246, 240);
-  stroke(eox, eoy, eox + bw * eScale, eoy + bh * eScale, 5, 40, 40, 45);
-  const win = (mesh.openings || []).filter((a) => a.type === 'finestra')[0];
-  if (win) {
-    const wx = eox + (win.fromX || 0) * eScale;
-    const wy = eoy + (bh - ((win.sill || 0) + win.height)) * eScale;
-    fill(wx, wy, wx + win.width * eScale, wy + win.height * eScale, 0, 170, 210);
-    stroke(wx, wy, wx + win.width * eScale, wy + win.height * eScale, 3, 20, 80, 110);
-  }
-
-  fill(70, 1020, 110, 1055, 0, 170, 210);
-  fill(200, 1020, 240, 1055, 40, 90, 190);
-  fill(330, 1020, 370, 1055, 230, 200, 150);
-  fill(460, 1020, 500, 1055, 250, 250, 250);
-  fill(590, 1020, 630, 1055, 210, 210, 230);
-  fill(720, 1020, 760, 1055, 200, 50, 40);
+  // Vista dalla camera: sinistra = Xmin, fondo = finestra, destra = Xmax
+  const vx0 = 80, vy0 = 760, vx1 = 920, vy1 = 1280;
+  fill(vx0, vy0, vx1, vy1, 250, 248, 242);
+  stroke(vx0, vy0, vx1, vy1, 6, 30, 30, 35);
+  text(80, 730, 'VISTA CAMERA  DOCCIA VICINO  FINESTRA IN FONDO A SINISTRA  PORTA A DESTRA', 2, 40, 40, 45);
+  // far wall
+  fill(260, 780, 740, 980, 235, 233, 226);
+  stroke(260, 780, 740, 980, 4, 40, 40, 45);
+  const win = (mesh.openings || []).find((a) => a.type === 'finestra');
+  const winLeft = win ? 260 + (win.fromX / Math.max(bw, 1)) * 480 : 280;
+  const winW = win ? Math.max(80, (win.width / Math.max(bw, 1)) * 480) : 120;
+  fill(winLeft, 820, winLeft + winW, 960, 0, 170, 210);
+  stroke(winLeft, 820, winLeft + winW, 960, 3, 10, 80, 110);
+  text(winLeft + 8, 830, 'FINESTRA', 2, 255, 255, 255);
+  // left wall receding: shower near (bottom), lavabi farther
+  fill(90, 980, 280, 1260, 40, 90, 190);
+  text(100, 1100, 'DOCCIA', 3, 255, 255, 255);
+  fill(120, 860, 300, 980, 230, 200, 150);
+  text(130, 900, 'LAVABO', 2, 40, 40, 40);
+  fill(150, 800, 310, 860, 230, 200, 150);
+  text(160, 820, 'LAVABO', 2, 40, 40, 40);
+  // right wall: door near, wc/bidet farther toward window
+  fill(760, 980, 910, 1260, 140, 90, 50);
+  text(775, 1100, 'PORTA', 3, 255, 255, 255);
+  fill(700, 880, 820, 980, 250, 250, 250);
+  stroke(700, 880, 820, 980, 2, 80, 80, 80);
+  text(715, 910, 'WC', 3, 40, 40, 40);
+  fill(720, 820, 820, 880, 210, 210, 230);
+  text(730, 835, 'BIDET', 2, 40, 40, 40);
 
   return encodePng(W, H, rgb);
 }
@@ -1273,14 +1331,13 @@ router.post('/generate-render', async (req, res, next) => {
     const fx = Array.isArray(fixtures) ? fixtures.filter(Boolean).join(', ') : String(fixtures || '');
     const isBath = /bagno|bath/i.test(room + ' ' + String(analysis).slice(0, 400));
     const lock = String(layoutLock || '').trim() || (String(analysis).match(/PIANTA VINCOLANTE[\s\S]{0,2500}/) || [''])[0];
-    const prompt = `Photorealistic architectural photograph reconstructing an EXISTING surveyed room.
-The FIRST reference image is a MEASURED FLOOR PLAN (top) and the WINDOW-WALL ELEVATION (bottom). Match it exactly.
-Colour key on the plan: cyan = window, blue = shower, beige = washbasins, white = WC, lilac = bidet, red mark = camera at the shower wall looking toward the window.
-FORBIDDEN generic bathroom: do NOT center the window; do NOT put the shower beside the window; do NOT draw one long trough sink.
-On THIS survey: window is offset on the FAR wall; shower is on the OPPOSITE wall (near the camera); TWO separate basins on the left wall; WC then bidet on the right wall.
+    const prompt = `Photorealistic architectural photograph matching the labeled survey images EXACTLY.
+The first reference has TWO diagrams:
+1) PLAN: top of the page = window wall, bottom = entrance. Labels: FINESTRA, DOCCIA, LAVABO, WC, BIDET, PORTA, CAMERA.
+2) CAMERA VIEW: what the photo must look like. LEFT foreground = DOCCIA (blue). LEFT mid-distance = two LAVABO. CENTER far wall = FINESTRA shifted to the LEFT, not centered. RIGHT far = WC and BIDET. RIGHT foreground = PORTA (brown wood door).
+WRONG layouts to never produce: shower next to the window; window in the middle of the back wall; one long trough sink; door missing.
 ${lock ? `LOCKED SURVEY:\n${lock}\n` : ''}
-Layout is LAW. Change only materials and lighting.
-ROOM TYPE: ${room || 'see analysis'}${isBath ? '. Bathroom. Never a bedroom. Keep every fixture on the surveyed wall.' : ''}
+ROOM TYPE: ${room || 'see analysis'}${isBath ? '. Bathroom. Never a bedroom.' : ''}
 FLOOR: ${floor || '(distinct from walls)'}
 WALLS: ${wall || '(distinct from floor)'}
 ${fx ? 'Fixtures stay put: ' + fx : ''}
@@ -1288,8 +1345,8 @@ User directives (finish/mood only): ${modelBrief || 'none'}
 Style: ${style || 'contemporary Italian interior'}
 Lighting: ${lighting || 'mixed natural and artificial'}
 Palette: ${colors || 'as specified'}
-${extraRefs.length ? 'Further images are catalog textures: floor texture on floor only, wall texture on walls only.' : ''}
-Camera as the red mark: standing at the shower wall, looking at the window. No extra windows, no rearranged furniture. No text, no watermark, no people.`;
+${extraRefs.length ? 'Further images are catalog textures: floor on floor only, wall on walls only.' : ''}
+Camera stands at the entrance/shower wall looking at the window. Photoreal materials, no text, no watermark, no people.`;
 
     const item = await generateInteriorImage(prompt, refs);
     const savedPhoto = await saveGeneratedImage(item, 'render');
