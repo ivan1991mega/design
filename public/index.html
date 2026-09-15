@@ -493,6 +493,7 @@ let currentAnalysis = null;
 let currentSourceImage = null;
 let lastSuggested = null;
 let lastTextureRefs = [];
+let lastPlanImage = null;
 let configViews = [];
 let viewTimer = null;
 let currentViewIndex = 0;
@@ -845,6 +846,19 @@ async function analyzeImage() {
     currentSourceImage = data.data.sourceImage || null;
     lastSuggested = data.data.suggested || null;
     lastTextureRefs = data.data.textureRefs || lastSuggested?.textureRefs || [];
+    lastPlanImage = data.data.planImage || lastSuggested?.planImage || null;
+    if (lastPlanImage) {
+      let planPrev = document.getElementById('planPreview');
+      if (!planPrev) {
+        planPrev = document.createElement('img');
+        planPrev.id = 'planPreview';
+        planPrev.className = 'preview';
+        planPrev.style.marginTop = '10px';
+        document.getElementById('analysisBox')?.after(planPrev);
+      }
+      planPrev.src = data.data.planUrl || ('/api/renders/media/' + lastPlanImage);
+      planPrev.style.display = 'block';
+    }
     document.getElementById('renderForm').style.display = 'block';
     const box = document.getElementById('analysisBox');
     if (box) {
@@ -889,6 +903,7 @@ async function generaRender() {
       wallFinish: document.getElementById('renderWall')?.value || '',
       fixtures: lastSuggested?.fixtures || [],
       layoutLock: lastSuggested?.layoutLock || '',
+      planImage: lastPlanImage,
       textureRefs: lastTextureRefs,
       style: document.getElementById('renderStyle').value,
       lighting: document.getElementById('renderLighting').value,
