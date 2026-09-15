@@ -437,6 +437,11 @@
           <p class="hint">Da SketchUp: Finestra → Struttura (Outliner), copia i nomi. Basta per capire che è un bagno.</p>
         </div>
         <div class="section">
+          <label>Porta (se non è nell'OBJ)</label>
+          <input id="doorHint" placeholder="es. stessa parete della doccia, 80 cm, a destra della doccia">
+          <p class="hint">Di default la porta sta sulla parete della doccia (ingresso). Scrivi qui solo se è su un'altra parete.</p>
+        </div>
+        <div class="section">
           <label>Direttive sul modello 3D / SketchUp</label>
           <textarea id="modelBrief" placeholder="Es. l’OBJ è il soggiorno in centimetri; ignora i layer di cantiere; tieni muri e finestre; sostituisci i cubi placeholder dei mobili; inquadratura dalla porta verso la finestra ovest."></textarea>
           <button type="button" class="ghost mic" id="modelDictBtn" onclick="toggleDictation('modelBrief','modelDictBtn')">Detta direttive</button>
@@ -835,6 +840,8 @@ async function analyzeImage() {
   if (currentModel) fd.append('model', currentModel);
   if (currentMtl) fd.append('mtl', currentMtl);
   if (objectList) fd.append('objectList', objectList);
+  const doorHint = (document.getElementById('doorHint')?.value || '').trim();
+  if (doorHint) fd.append('doorHint', doorHint);
   const modelBrief = (document.getElementById('modelBrief')?.value || '').trim();
   if (modelBrief) fd.append('modelBrief', modelBrief);
   const res = await fetch('/api/renders/analyze-image', {
