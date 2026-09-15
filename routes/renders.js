@@ -273,6 +273,7 @@ router.post('/analyze-image', analyzeUpload, async (req, res, next) => {
       mesh = { format: ext.slice(1), file: modelFile.originalname, bytes: modelFile.size };
     }
 
+    const modelBrief = String(req.body?.modelBrief || '').trim();
     let vision = '';
     if (imageFile) {
       const imageBuffer = await fs.readFile(imageFile.path);
@@ -300,7 +301,8 @@ Elenca in italiano:
 6. Luce: direzione, temperatura, ombre
 7. Cosa è un vincolo strutturale e cosa è modificabile
 8. Istruzioni precise per un motore di render: stessa inquadratura, stesse proporzioni, stesso punto di fuga
-${mesh ? `Dati mesh allegata: ${JSON.stringify(mesh)} — usali per quote e oggetti nominati.` : ''}`
+${mesh ? `Dati mesh allegata: ${JSON.stringify(mesh)} — usali per quote e oggetti nominati.` : ''}
+${modelBrief ? `DIRETTIVE DELL'UTENTE SUL MODELLO (prioritarie): ${modelBrief}` : ''}`
               }
             ]
           }
@@ -317,6 +319,7 @@ ${mesh ? `Dati mesh allegata: ${JSON.stringify(mesh)} — usali per quote e ogge
           content: `Da questo modello 3D esportato da SketchUp/CAD ricostruisci in italiano una lettura architettonica vincolante per un render.
 Mesh: ${JSON.stringify(mesh)}
 Deduci destinazione d'uso dai nomi oggetti, proporzioni della bounding box, possibili muri/pavimento.
+${modelBrief ? `DIRETTIVE DELL'UTENTE (prioritarie): ${modelBrief}` : ''}
 Scrivi layout, quote relative, cosa non va inventato.`
         }]
       });
@@ -324,6 +327,7 @@ Scrivi layout, quote relative, cosa non va inventato.`
     }
 
     const analysis = [
+      modelBrief ? `DIRETTIVE UTENTE SUL 3D\n${modelBrief}\n` : '',
       vision,
       mesh ? `\n\nDATI MODELLO 3D\n${JSON.stringify(mesh, null, 2)}` : ''
     ].join('').trim();
@@ -344,7 +348,7 @@ Scrivi layout, quote relative, cosa non va inventato.`
 
 router.post('/generate-render', async (req, res, next) => {
   try {
-    const { clientId, analysis, style, lighting, colors, sourceImage } = req.body;
+    const { clientId, analysis, style, lighting, colors, sourceImage, modelBrief } = req.body;
     if (!analysis) {
       return res.status(400).json({ success: false, error: 'Manca l\'analisi del file' });
     }
@@ -363,6 +367,7 @@ router.post('/generate-render', async (req, res, next) => {
 Follow the survey/analysis as constraints. Do NOT change room shape, window/door positions, camera angle or furniture layout unless asked.
 Analysis:
 ${String(analysis).slice(0, 2500)}
+${modelBrief ? `User directives on the 3D/SketchUp file (highest priority): ${modelBrief}` : ''}
 Requested style overlay: ${style || 'keep existing character'}
 Lighting: ${lighting || 'keep existing light direction'}
 Colors/materials overlay: ${colors || 'keep existing materials unless specified'}
