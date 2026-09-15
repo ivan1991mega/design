@@ -62,6 +62,9 @@
   .error-banner { display:none; background:#3a1f1c; border:1px solid #e07060; color:#f0b4aa; border-radius:12px; padding:12px 14px; margin-bottom:16px; }
   .error-banner.show { display:block; }
   .file { border:1px dashed var(--line); border-radius:14px; padding:16px; background:var(--bg3); }
+  .drop { min-height:88px; display:flex; align-items:center; justify-content:center; text-align:center; cursor:pointer; }
+  .drop.over { border-color:var(--accent); background:#2a2418; }
+  .mic { margin-top:8px; }
   .section { margin-bottom:18px; }
   .room-extra { display:none; }
   img.preview { width:100%; border-radius:14px; display:block; }
@@ -135,7 +138,9 @@
 
           <div class="section">
             <label>Come lo immagini</label>
-            <textarea name="brief" placeholder="Es. isola al centro con cappa sospesa… spa con sauna e vasca idromassaggio… palestra con rack e specchi… terrazzo con pranzo all’aperto e verdure in vaso… piscina a sfioro con lettini."></textarea>
+            <textarea id="briefField" name="brief" placeholder="Scrivi o detta: isola al centro, spa con sauna, terrazzo con pranzo all’aperto…"></textarea>
+            <button type="button" class="ghost mic" id="dictBtn" onclick="toggleDictation()">Detta</button>
+            <p class="hint" id="dictHint">Usa il microfono del telefono o del Mac. Serve Chrome o Safari e il permesso microfono.</p>
           </div>
 
           <div class="grid-2">
@@ -379,19 +384,30 @@
 
     <div id="viewer" class="tab-content">
       <div class="card">
-        <h2 style="margin-bottom:14px;">Da una foto esistente</h2>
+        <h2 style="margin-bottom:14px;">Da rilievo: foto o modello 3D</h2>
+        <p class="hint" style="margin-bottom:14px;">PNG/JPG della vista o pianta, e/o OBJ-STL-glTF esportati da SketchUp. Il render deve ripartire da quella geometria, non inventarne un’altra. Il .skp nativo non si legge: da SketchUp usa Esporta → OBJ.</p>
         <div class="section">
-          <label>Cliente (qui serve, per salvare l’analisi sul progetto)</label>
+          <label>Cliente (facoltativo)</label>
           <select id="clientSelect" onchange="selectClient(this.value)"><option value="">— Seleziona —</option></select>
         </div>
-        <div class="file" onclick="document.getElementById('imageFile').click();">
-          <p>Carica foto ambiente</p>
-          <input type="file" id="imageFile" accept="image/*" style="display:none" onchange="handleImageSelect()">
+        <div class="section">
+          <label>Trascina qui foto PNG e modello OBJ insieme</label>
+          <div class="file drop" id="dropZone">
+            <div>
+              <p>Trascina PNG + OBJ, oppure clicca</p>
+              <p class="hint" id="dropHint">Puoi lasciare entrambi nello stesso momento</p>
+            </div>
+            <input type="file" id="mixedFiles" multiple accept="image/png,image/jpeg,image/webp,.obj,.stl,.gltf,.glb,.dae,.mtl" style="display:none">
+          </div>
+          <input type="file" id="imageFile" accept="image/png,image/jpeg,image/webp" style="display:none" onchange="handleImageSelect()">
+          <input type="file" id="modelFile" accept=".obj,.stl,.gltf,.glb,.dae,.mtl" style="display:none" onchange="handleModelSelect()">
+          <p class="hint" id="modelLabel"></p>
         </div>
         <div id="imagePreview" style="display:none; margin-top:14px;">
           <img id="previewImg" class="preview">
-          <button onclick="analyzeImage()" style="margin-top:12px;width:100%;">Analizza e prepara render</button>
         </div>
+        <button type="button" onclick="analyzeImage()" style="margin-top:12px;width:100%;">Analizza il rilievo</button>
+        <pre id="analysisBox" class="hint" style="white-space:pre-wrap;margin-top:12px;display:none;"></pre>
         <div id="renderForm" style="display:none; margin-top:16px;">
           <div class="section"><label>Stile</label><input id="renderStyle"></div>
           <div class="section"><label>Luce</label>
@@ -414,7 +430,9 @@
 let token = localStorage.getItem('token');
 let currentClient = null;
 let currentImage = null;
+let currentModel = null;
 let currentAnalysis = null;
+let currentSourceImage = null;
 let configViews = [];
 let viewTimer = null;
 let currentViewIndex = 0;
@@ -528,38 +546,143 @@ function switchTab(tab) {
 function handleImageSelect() {
   const file = document.getElementById('imageFile').files[0];
   if (!file) return;
+  currentImage = file;
   const reader = new FileReader();
   reader.onload = e => {
     document.getElementById('previewImg').src = e.target.result;
     document.getElementById('imagePreview').style.display = 'block';
-    currentImage = file;
   };
   reader.readAsDataURL(file);
 }
 
+function handleModelSelect() {
+  const file = document.getElementById('modelFile').files[0];
+  currentModel = file || null;
+  const lab = document.getElementById('modelLabel');
+  if (lab) lab.textContent = file ? file.name + ' (' + Math.round(file.size / 1024) + ' KB)' : '';
+}
+
+function isModelFile(f) {
+  return /\.(obj|stl|gltf|glb|dae|mtl)$/i.test(f.name);
+}
+function isImageFile(f) {
+  return /^image\//.test(f.type) || /\.(png|jpe?g|webp)$/i.test(f.name);
+}
+function takeDroppedFiles(files) {
+  [...files].forEach(f => {
+    if (isImageFile(f)) {
+      currentImage = f;
+      const reader = new FileReader();
+      reader.onload = e => {
+        document.getElementById('previewImg').src = e.target.result;
+        document.getElementById('imagePreview').style.display = 'block';
+      };
+      reader.readAsDataURL(f);
+    } else if (isModelFile(f)) {
+      currentModel = f;
+    }
+  });
+  const parts = [];
+  if (currentImage) parts.push('PNG/JPG: ' + currentImage.name);
+  if (currentModel) parts.push('Modello: ' + currentModel.name);
+  const hint = document.getElementById('dropHint');
+  const lab = document.getElementById('modelLabel');
+  if (hint) hint.textContent = parts.join(' + ') || 'Puoi lasciare entrambi nello stesso momento';
+  if (lab) lab.textContent = parts.join(' · ');
+}
+
+const dropZone = document.getElementById('dropZone');
+const mixedFiles = document.getElementById('mixedFiles');
+if (dropZone && mixedFiles) {
+  dropZone.addEventListener('click', () => mixedFiles.click());
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('over');
+    takeDroppedFiles(e.dataTransfer.files);
+  });
+  mixedFiles.addEventListener('change', () => takeDroppedFiles(mixedFiles.files));
+}
+
+let recognition = null;
+let dictating = false;
+function toggleDictation() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const btn = document.getElementById('dictBtn');
+  const hint = document.getElementById('dictHint');
+  const field = document.getElementById('briefField');
+  if (!SR) {
+    if (hint) hint.textContent = 'Dettato non disponibile su questo browser. Usa Chrome o Safari.';
+    return;
+  }
+  if (dictating && recognition) {
+    recognition.stop();
+    dictating = false;
+    if (btn) btn.textContent = 'Detta';
+    return;
+  }
+  recognition = new SR();
+  recognition.lang = 'it-IT';
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  let locked = field.value ? field.value.replace(/\s+$/, '') + ' ' : '';
+  recognition.onresult = (ev) => {
+    let interim = '';
+    for (let i = ev.resultIndex; i < ev.results.length; i++) {
+      const t = ev.results[i][0].transcript;
+      if (ev.results[i].isFinal) locked += t + ' ';
+      else interim += t;
+    }
+    field.value = (locked + interim).trimStart();
+  };
+  recognition.onerror = () => {
+    dictating = false;
+    if (btn) btn.textContent = 'Detta';
+    if (hint) hint.textContent = 'Microfono non attivo o permesso negato.';
+  };
+  recognition.onend = () => {
+    dictating = false;
+    if (btn) btn.textContent = 'Detta';
+  };
+  recognition.start();
+  dictating = true;
+  if (btn) btn.textContent = 'Stop dettato';
+  if (hint) hint.textContent = 'Parla: sto scrivendo nel campo.';
+}
+
 async function analyzeImage() {
-  if (!currentImage || !currentClient) { alert('Seleziona cliente e foto'); return; }
+  currentClient = document.getElementById('clientSelect').value || currentClient;
+  if (!currentImage && !currentModel) { alert('Carica una foto e/o un OBJ'); return; }
   const fd = new FormData();
-  fd.append('image', currentImage);
+  if (currentImage) fd.append('image', currentImage);
+  if (currentModel) fd.append('model', currentModel);
   const res = await fetch('/api/renders/analyze-image', {
     method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: fd
   });
   const data = await res.json();
   if (data.success) {
     currentAnalysis = data.data.analysis;
+    currentSourceImage = data.data.sourceImage || null;
     document.getElementById('renderForm').style.display = 'block';
-    alert('Analisi pronta');
+    const box = document.getElementById('analysisBox');
+    if (box) {
+      box.style.display = 'block';
+      box.textContent = currentAnalysis.slice(0, 2500);
+    }
   } else alert(data.error || 'Errore analisi');
 }
 
 async function generaRender() {
   if (!currentAnalysis) return;
+  currentClient = document.getElementById('clientSelect').value || currentClient;
   const res = await fetch('/api/renders/generate-render', {
     method: 'POST',
     headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      clientId: currentClient,
+      clientId: currentClient || undefined,
       analysis: currentAnalysis,
+      sourceImage: currentSourceImage,
       style: document.getElementById('renderStyle').value,
       lighting: document.getElementById('renderLighting').value,
       colors: document.getElementById('renderColors').value
