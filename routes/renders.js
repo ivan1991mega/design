@@ -251,7 +251,7 @@ function classifyPart(name) {
 function sketchupLabel(line) {
   const parts = String(line).split(/\s+/).filter(Boolean);
   const useful = parts.filter((p) => !/^mesh\d*$/i.test(p) && !/^model$/i.test(p) && !/^group\d*$/i.test(p) && !/^skp/i.test(p));
-  const hit = useful.find((p) => /doccia|lavabo|bidet|cassetta|wc|vaso|finestra|paviment|parete|bagno/i.test(p));
+  const hit = useful.find((p) => /doccia|lavabo|bidet|cassetta|wc|vaso|finestra|porta|door|window|paviment|parete|bagno/i.test(p));
   return hit || useful[useful.length - 1] || parts[0] || line;
 }
 
@@ -296,10 +296,19 @@ function parseObjSummary(text, mtlText) {
   const matsUsed = new Set();
   const matFaces = new Map();
   const allLabels = [];
+  const verts = [];
   let mtllib = '';
   const ensure = (n) => {
-    if (!objects.has(n)) objects.set(n, { name: n, materials: new Set(), faces: 0, role: classifyPart(n) });
+    if (!objects.has(n)) objects.set(n, {
+      name: n, materials: new Set(), faces: 0, role: classifyPart(n),
+      bb: { xmin: Infinity, ymin: Infinity, zmin: Infinity, xmax: -Infinity, ymax: -Infinity, zmax: -Infinity }
+    });
     return objects.get(n);
+  };
+  const grow = (o, v) => {
+    if (v[0] < o.bb.xmin) o.bb.xmin = v[0]; if (v[0] > o.bb.xmax) o.bb.xmax = v[0];
+    if (v[1] < o.bb.ymin) o.bb.ymin = v[1]; if (v[1] > o.bb.ymax) o.bb.ymax = v[1];
+    if (v[2] < o.bb.zmin) o.bb.zmin = v[2]; if (v[2] > o.bb.zmax) o.bb.zmax = v[2];
   };
 
   for (const raw of String(text).split(/\r?\n/)) {
@@ -328,13 +337,22 @@ function parseObjSummary(text, mtlText) {
       const x = Number(p[1]), y = Number(p[2]), z = Number(p[3]);
       if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) {
         vertCount += 1;
+        verts.push([x, y, z]);
         if (x < vertsMin[0]) vertsMin[0] = x; if (y < vertsMin[1]) vertsMin[1] = y; if (z < vertsMin[2]) vertsMin[2] = z;
         if (x > vertsMax[0]) vertsMax[0] = x; if (y > vertsMax[1]) vertsMax[1] = y; if (z > vertsMax[2]) vertsMax[2] = z;
       }
     } else if (line.startsWith('f ')) {
       faces += 1;
-      ensure(current).faces += 1;
+      const o = ensure(current);
+      o.faces += 1;
       if (currentMat) matFaces.set(currentMat, (matFaces.get(currentMat) || 0) + 1);
+      for (const tok of line.slice(2).trim().split(/\s+/)) {
+        let idx = parseInt(tok, 10);
+        if (!idx) continue;
+        if (idx < 0) idx = verts.length + idx + 1;
+        const v = verts[idx - 1];
+        if (v) grow(o, v);
+      }
     }
   }
 
@@ -372,6 +390,87 @@ function parseObjSummary(text, mtlText) {
   const axis = [...size].sort((a, b) => b - a);
   const unitsGuess = /centimet/i.test(unitsComment) ? 'centimetri'
     : axis[0] > 80 ? 'centimetri o millimetri' : axis[0] > 8 ? 'metri' : 'unita SketchUp';
+  const toHuman = (n) => unitsGuess === 'centimetri'
+    ? Math.round(n) + ' cm'
+    : n.toFixed(2);
+
+  const wallOf = (bb) => {
+    const cx = (bb.xmin + bb.xmax) / 2;
+    const cz = (bb.zmin + bb.zmax) / 2;
+    const d = {
+      'x-': Math.abs(cx - vertsMin[0]),
+      'x+': Math.abs(cx - vertsMax[0]),
+      'z-': Math.abs(cz - vertsMin[2]),
+      'z+': Math.abs(cz - vertsMax[2])
+    };
+    return Object.entries(d).sort((a, b) => a[1] - b[1])[0][0];
+  };
+  const opposite = { 'x-': 'x+', 'x+': 'x-', 'z-': 'z+', 'z+': 'z-' };
+  const leftOf = { 'z-': 'x-', 'z+': 'x+', 'x-': 'z+', 'x+': 'z-' };
+  const openings = [];
+  const placed = [];
+  for (const o of objects.values()) {
+    if (!o.faces || !Number.isFinite(o.bb.xmin)) continue;
+    const wall = wallOf(o.bb);
+    const w = o.bb.xmax - o.bb.xmin;
+    const h = o.bb.ymax - o.bb.ymin;
+    const d = o.bb.zmax - o.bb.zmin;
+    const along = Math.max(w, d);
+    const thick = Math.min(w, d);
+    const item = {
+      name: o.name,
+      role: o.role,
+      wall,
+      width: Number(along.toFixed(1)),
+      height: Number(h.toFixed(1)),
+      sill: Number((o.bb.ymin - vertsMin[1]).toFixed(1)),
+      thick: Number(thick.toFixed(1)),
+      fromX: Number((o.bb.xmin - vertsMin[0]).toFixed(1)),
+      fromZ: Number((o.bb.zmin - vertsMin[2]).toFixed(1)),
+      sizeX: Number(w.toFixed(1)),
+      sizeY: Number(h.toFixed(1)),
+      sizeZ: Number(d.toFixed(1))
+    };
+    const nm = normName(o.name);
+    if (/handle|maniglia|cernier|plastic handle/i.test(nm)) continue;
+    const isShell = w > size[0] * 0.85 && d > size[2] * 0.85 && h > size[1] * 0.7;
+    if (isShell) continue;
+    if (o.role === 'opening' || /(finestra|window|porta|door|infisso)/.test(nm)) {
+      if (along < 25 && h < 40) continue;
+      item.type = /(porta|door)/.test(nm) ? 'porta' : 'finestra';
+      openings.push(item);
+    } else if (o.role !== 'floor' && o.role !== 'ceiling' && (o.role !== 'object' || o.faces > 80)) {
+      if (Math.max(w, d, h) < 15) continue;
+      placed.push(item);
+    }
+  }
+  placed.sort((a, b) => (b.sizeX * b.sizeZ) - (a.sizeX * a.sizeZ));
+  const win = openings.filter((a) => a.type === 'finestra').sort((a, b) => b.width * b.height - a.width * a.height)[0]
+    || openings[0];
+  const relWall = (wall) => {
+    if (!win) return 'parete ' + wall;
+    if (wall === win.wall) return 'parete FINESTRA (in fondo, da NON spostare)';
+    if (wall === opposite[win.wall]) return 'parete OPPOSTA alla finestra';
+    if (wall === leftOf[win.wall]) return 'parete SINISTRA guardando la finestra';
+    return 'parete DESTRA guardando la finestra';
+  };
+  openings.forEach((a) => { a.rel = relWall(a.wall); });
+  placed.forEach((a) => { a.rel = relWall(a.wall); });
+
+  const lockLines = [
+    'PIANTA VINCOLANTE DAL MODELLO 3D. Vietato ruotare, specchiare, spostare aperture o arredi. Si possono cambiare solo materiali e finiture.',
+    `Stanza ${toHuman(size[0])} (X) × ${toHuman(size[2])} (Z) × h ${toHuman(size[1])}. Origine: angolo Xmin/Zmin a pavimento.`,
+    win
+      ? `FINESTRA: ${win.name} ${toHuman(win.width)} × h ${toHuman(win.height)}, davanzale ${toHuman(win.sill)}, a X=${toHuman(win.fromX)} sulla ${relWall(win.wall)}. Unica. Non spostarla.`
+      : 'Nessuna finestra nel modello: non inventarne.',
+    ...openings.filter((a) => a.type === 'porta').map((a) => `PORTA ${a.name}: ${toHuman(a.width)} × h ${toHuman(a.height)} a X=${toHuman(a.fromX)} Z=${toHuman(a.fromZ)} sulla ${a.rel}. Fissa.`),
+    'ELEMENTI FISSI (coordinate dall\'angolo origine, non rimescolare):',
+    ...placed.slice(0, 20).map((a) => `- ${a.name} [${a.role}] ${a.rel || a.wall} | X ${toHuman(a.fromX)} Z ${toHuman(a.fromZ)} | ${toHuman(a.sizeX)}×${toHuman(a.sizeZ)} h ${toHuman(a.sizeY)}`),
+    win
+      ? 'CAMERA: dalla parete opposta si guarda la finestra IN FONDO. Sinistra/destra come da elenco.'
+      : 'CAMERA: stessa pianta, stesse pareti lunghe e corte del modello.'
+  ];
+  const layoutLock = lockLines.filter(Boolean).join('\n');
 
   const bathNote = roomGuess.best === 'bagno'
     ? 'Rilevato BAGNO (doccia, lavabo, bidet, cassetta WC). Vietato interpretarlo come camera da letto.'
@@ -397,13 +496,16 @@ function parseObjSummary(text, mtlText) {
     roomScores: roomGuess.scores,
     fixtures,
     objects: objList,
+    openings,
+    placed: placed.slice(0, 12),
+    layoutLock,
     materials: [...matsUsed].slice(0, 40),
     catalogTiles: tiles.slice(0, 6),
     mtlColors: Object.values(mtl).filter((m) => m.hex).slice(0, 12).map((m) => m.name + ' ' + m.hex),
     missingMaps,
     floorGuess,
     wallGuess,
-    note: (bathNote + mapNote).trim()
+    note: [bathNote, mapNote, layoutLock ? 'Aperture e orientamento bloccati sul modello.' : ''].filter(Boolean).join(' ')
   };
 }
 
@@ -795,9 +897,13 @@ Elenca in italiano:
 7. Cosa è un vincolo strutturale e cosa è modificabile
 8. Istruzioni precise per un motore di render: stessa inquadratura, stesse proporzioni, stesso punto di fuga
 ${mesh ? `DATI MESH (vincolanti). Stanza rilevata: ${mesh.suggestedRoom}. ${mesh.note || ''}
+PIANTA BLOCCATA:
+${mesh.layoutLock || ''}
 Oggetti: ${(mesh.objects||[]).slice(0,25).map(o=>o.name+'['+o.role+']').join(', ')}
 Quote: ${mesh.proportions}
+Aperture: ${JSON.stringify(mesh.openings||[])}
 Se suggestedRoom è bagno: è un BAGNO, mai una camera da letto, niente letto/piumoni.
+NON spostare porte/finestre. NON ruotare la stanza.
 ${JSON.stringify({ fixtures: mesh.fixtures, materials: mesh.materials, mtlColors: mesh.mtlColors })}` : ''}
 ${modelBrief ? `DIRETTIVE DELL'UTENTE SUL MODELLO (prioritarie): ${modelBrief}` : ''}`
               }
@@ -817,18 +923,23 @@ ${modelBrief ? `DIRETTIVE DELL'UTENTE SUL MODELLO (prioritarie): ${modelBrief}` 
 Stanza rilevata dal parser: ${mesh.suggestedRoom} (${mesh.note || 'nessuna nota'}).
 Se è bagno: descrivi sanitari, doccia/vasca, lavabo. VIETATO: letto, camera, piumoni.
 L'OBJ è GEOMETRIA. I materiali scelti dall'utente (se presenti nelle direttive) vincono su colori placeholder del modello.
+ORIENTAMENTO E APERTURE (non modificarli):
+${mesh.layoutLock || 'non disponibile'}
+Aperture: ${JSON.stringify(mesh.openings || [])}
+Posizioni: ${JSON.stringify(mesh.placed || [])}
 Mesh: ${JSON.stringify({ suggestedRoom: mesh.suggestedRoom, fixtures: mesh.fixtures, objects: (mesh.objects||[]).slice(0,30), proportions: mesh.proportions, materials: mesh.materials, mtlColors: mesh.mtlColors, floorGuess: mesh.floorGuess, wallGuess: mesh.wallGuess })}
 ${modelBrief ? `DIRETTIVE UTENTE (prioritarie, anche su pavimento/pareti/colori): ${modelBrief}` : ''}
-Scrivi in italiano: tipo stanza, layout, quote, aperture, elenco sanitari/arredi da mantenere.`
+Scrivi in italiano: tipo stanza, quale parete ha la finestra, quale ha la porta, cosa sta a sinistra/destra GUARDANDO la finestra. Vietato inventare un orientamento diverso.`
         }]
       });
       vision = response.choices?.[0]?.message?.content || '';
     }
 
     const analysis = [
+      mesh?.layoutLock ? `PIANTA E APERTURE BLOCCATE\n${mesh.layoutLock}\n` : '',
       modelBrief ? `DIRETTIVE UTENTE SUL 3D\n${modelBrief}\n` : '',
       vision,
-      mesh ? `\n\nDATI MODELLO 3D\n${JSON.stringify(mesh, null, 2)}` : ''
+      mesh ? `\n\nDATI MODELLO 3D\n${JSON.stringify({ ...mesh, objects: (mesh.objects || []).slice(0, 20) }, null, 2)}` : ''
     ].join('').trim();
 
     let textureRefs = [];
@@ -878,6 +989,8 @@ Scrivi in italiano: tipo stanza, layout, quote, aperture, elenco sanitari/arredi
       wallGuess: mesh.wallGuess || '',
       colors: mesh.mtlColors || [],
       note: mesh.note || '',
+      layoutLock: mesh.layoutLock || '',
+      openings: mesh.openings || [],
       textureRefs
     } : null;
 
@@ -899,7 +1012,7 @@ Scrivi in italiano: tipo stanza, layout, quote, aperture, elenco sanitari/arredi
 
 router.post('/generate-render', async (req, res, next) => {
   try {
-    const { clientId, analysis, style, lighting, colors, sourceImage, modelBrief, roomType, floorFinish, wallFinish, fixtures, textureRefs } = req.body;
+    const { clientId, analysis, style, lighting, colors, sourceImage, modelBrief, roomType, floorFinish, wallFinish, fixtures, textureRefs, layoutLock } = req.body;
     if (!analysis) {
       return res.status(400).json({ success: false, error: 'Manca l\'analisi del file' });
     }
@@ -929,21 +1042,20 @@ router.post('/generate-render', async (req, res, next) => {
     const wall = String(wallFinish || '').trim();
     const fx = Array.isArray(fixtures) ? fixtures.filter(Boolean).join(', ') : String(fixtures || '');
     const isBath = /bagno|bath/i.test(room + ' ' + String(analysis).slice(0, 400));
-    const prompt = `Photorealistic architectural photograph of this EXACT space.
-OBJ/SketchUp = GEOMETRY ONLY (room shape, openings, fixture positions). User materials OVERRIDE any OBJ placeholder colors.
-ROOM TYPE: ${room || 'see analysis'}${isBath ? '. THIS IS A BATHROOM, never a bedroom. Forbidden: bed, pillows, duvet, nightstands. Required: toilet and/or bidet, washbasin, shower or bathtub, bathroom tapware.' : ''}
-FLOOR (only the floor plane, never the walls): ${floor || '(keep distinct from walls)'}
-WALLS (only vertical surfaces, never the floor): ${wall || '(keep distinct from floor)'}
-CRITICAL: floor and walls MUST be different materials and different colours. No wrapping the same texture onto both.
-${fx ? 'Fixtures that MUST appear in the correct places: ' + fx : ''}
-User directives: ${modelBrief || 'none'}
+    const lock = String(layoutLock || '').trim() || (String(analysis).match(/PIANTA VINCOLANTE[\s\S]{0,2500}/) || [''])[0];
+    const prompt = `Photorealistic architectural photograph reconstructing an EXISTING surveyed room. Layout is LAW.
+${lock ? `LOCKED SURVEY (do not change positions):\n${lock}\n` : ''}
+You may change materials, colours, lighting quality. You may NOT move doors, windows, sanitary, furniture, or rotate/mirror the plan.
+ROOM TYPE: ${room || 'see analysis'}${isBath ? '. THIS IS A BATHROOM, never a bedroom. Forbidden: bed, pillows, duvet, nightstands. Keep toilet/bidet, basins, shower exactly on the listed walls.' : ''}
+FLOOR (floor plane only): ${floor || '(distinct from walls)'}
+WALLS (vertical only): ${wall || '(distinct from floor)'}
+CRITICAL: floor ≠ walls. ${fx ? 'Fixtures stay where listed: ' + fx : ''}
+User directives (materials/mood only unless they contradict the survey): ${modelBrief || 'none'}
 Style: ${style || 'contemporary Italian interior'}
 Lighting: ${lighting || 'mixed natural and artificial'}
-Palette overlay: ${colors || 'as specified in floor/walls'}
-${extraRefs.length ? 'Extra reference images are CATALOG TEXTURES: match the floor plane to the floor texture photo and the walls to the wall texture photo. Do not apply the same catalog image to both.' : ''}
-Survey:
-${String(analysis).slice(0, 1800)}
-Same proportions and vanishing points. No text, no watermark, no people.`;
+Palette: ${colors || 'as specified in floor/walls'}
+${extraRefs.length ? 'Catalog texture photos: apply the floor image only on the floor, wall image only on walls.' : ''}
+Camera looks toward the window if one exists; openings stay on the surveyed walls. No extra windows, no rearranged furniture. No text, no watermark, no people.`;
 
     const item = await generateInteriorImage(prompt, refs);
     const savedPhoto = await saveGeneratedImage(item, 'render');
@@ -1076,13 +1188,28 @@ router.post('/configure-environment', optionalMultipart, async (req, res, next) 
     if (planFile) uploaded.push(planFile.path);
     if (modelFileCfg) uploaded.push(modelFileCfg.path);
     if (mtlFileCfg) uploaded.push(mtlFileCfg.path);
-    if (modelFileCfg && path.extname(modelFileCfg.originalname || '').toLowerCase() === '.obj') {
-      const mtlTxt = mtlFileCfg ? await fs.readFile(mtlFileCfg.path, 'utf8') : '';
-      const parsed = parseObjSummary(await fs.readFile(modelFileCfg.path, 'utf8'), mtlTxt);
+    if (modelFileCfg) {
+      const extCfg = path.extname(modelFileCfg.originalname || '').toLowerCase();
+      let objTxt = '';
+      let mtlTxt = mtlFileCfg ? await fs.readFile(mtlFileCfg.path, 'utf8') : '';
+      if (extCfg === '.zip') {
+        const entries = await unzipEntries(await fs.readFile(modelFileCfg.path));
+        const objN = Object.keys(entries).find((n) => n.toLowerCase().endsWith('.obj') && !n.toLowerCase().includes('__macosx'));
+        const mtlN = Object.keys(entries).find((n) => n.toLowerCase().endsWith('.mtl') && !n.toLowerCase().includes('__macosx'));
+        if (objN) objTxt = entries[objN].toString('utf8');
+        if (mtlN) mtlTxt = entries[mtlN].toString('utf8');
+      } else if (extCfg === '.obj') {
+        objTxt = await fs.readFile(modelFileCfg.path, 'utf8');
+      }
+      if (objTxt) {
+      const parsed = parseObjSummary(objTxt, mtlTxt);
       body.modelLayout = JSON.stringify({
         suggestedRoom: parsed.suggestedRoom,
         note: parsed.note,
         fixtures: parsed.fixtures,
+        layoutLock: parsed.layoutLock,
+        openings: parsed.openings,
+        placed: (parsed.placed || []).slice(0, 12),
         objects: (parsed.objects || []).slice(0, 25),
         proportions: parsed.proportions
       });
@@ -1091,6 +1218,8 @@ router.post('/configure-environment', optionalMultipart, async (req, res, next) 
       }
       if (parsed.suggestedRoom === 'bagno' && !fixtures.length) {
         fixtures.push(...(parsed.fixtures.length ? parsed.fixtures : ['sanitari contemporanei', 'lavabo', 'doccia o vasca']));
+      }
+      body.layoutLock = parsed.layoutLock;
       }
     }
 
@@ -1113,7 +1242,7 @@ ${fixturesText ? `Elements that MUST appear: ${fixturesText}` : ''}
 ${brief ? `User layout brief (follow closely): ${brief}` : ''}
 ${sqm ? `Exact area: ${sqm} square meters.` : `Size class: ${size}`}
 ${planFile ? 'A floor-plan image is provided: respect room shape and openings.' : ''}
-${body.modelLayout ? `SketchUp/OBJ geometry (respect positions, ignore OBJ colours): ${String(body.modelLayout).slice(0, 900)}` : ''}
+${body.layoutLock ? `LOCKED SURVEY from the 3D model — do not move anything, only restyle materials:\n${body.layoutLock}` : (body.modelLayout ? `OBJ geometry: ${String(body.modelLayout).slice(0, 900)}` : '')}
 Lighting: ${lighting}
 Budget: ${budget}
 Camera: ${camera}
