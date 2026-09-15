@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import OpenAI, { toFile } from 'openai';
 
+import mongoose from 'mongoose';
 import Render from '../models/Render.js';
 import Client from '../models/Client.js';
 import { authenticate } from '../middleware/auth.js';
@@ -12,6 +13,118 @@ import { authenticate } from '../middleware/auth.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
 const router = express.Router();
+
+function gridBucket() {
+  if (!mongoose.connection?.db) throw new Error('Mongo non connesso');
+  return new mongoose.mongo.GridFSBucket(mongoose.connection.db, { bucketName: 'renders' });
+}
+
+async function putInGrid(filename, buffer) {
+  const bucket = gridBucket();
+  const id = await new Promise((resolve, reject) => {
+    const stream = bucket.openUploadStream(filename, { contentType: 'image/png' });
+    stream.on('error', reject);
+    stream.on('finish', () => resolve(stream.id));
+    stream.end(buffer);
+  });
+  return id;
+}
+
+function crc32(buf) {
+  let c = ~0;
+  for (let i = 0; i < buf.length; i++) {
+    c ^= buf[i];
+    for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xedb88320 & -(c & 1));
+  }
+  return (~c) >>> 0;
+}
+
+function buildZip(files) {
+  const locals = [];
+  const centrals = [];
+  let offset = 0;
+  for (const file of files) {
+    const name = Buffer.from(file.name, 'utf8');
+    const data = file.data;
+    const crc = crc32(data);
+    const local = Buffer.alloc(30 + name.length);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(0, 6);
+    local.writeUInt16LE(0, 8);
+    local.writeUInt16LE(0, 10);
+    local.writeUInt16LE(0, 12);
+    local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(data.length, 18);
+    local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(name.length, 26);
+    local.writeUInt16LE(0, 28);
+    name.copy(local, 30);
+    const central = Buffer.alloc(46 + name.length);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(0, 8);
+    central.writeUInt16LE(0, 10);
+    central.writeUInt16LE(0, 12);
+    central.writeUInt16LE(0, 14);
+    central.writeUInt32LE(crc, 16);
+    central.writeUInt32LE(data.length, 20);
+    central.writeUInt32LE(data.length, 24);
+    central.writeUInt16LE(name.length, 28);
+    central.writeUInt16LE(0, 30);
+    central.writeUInt16LE(0, 32);
+    central.writeUInt16LE(0, 34);
+    central.writeUInt16LE(0, 36);
+    central.writeUInt32LE(0, 38);
+    central.writeUInt32LE(offset, 42);
+    name.copy(central, 46);
+    locals.push(Buffer.concat([local, data]));
+    centrals.push(central);
+    offset += local.length + data.length;
+  }
+  const centralDir = Buffer.concat(centrals);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(files.length, 8);
+  end.writeUInt16LE(files.length, 10);
+  end.writeUInt32LE(centralDir.length, 12);
+  end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...locals, centralDir, end]);
+}
+
+async function readGridByName(filename) {
+  const bucket = gridBucket();
+  const files = await bucket.find({ filename }).toArray();
+  if (!files.length) return null;
+  const chunks = [];
+  await new Promise((resolve, reject) => {
+    bucket.openDownloadStreamByName(filename)
+      .on('data', (c) => chunks.push(c))
+      .on('error', reject)
+      .on('end', resolve);
+  });
+  return Buffer.concat(chunks);
+}
+
+router.get('/media/:filename', async (req, res, next) => {
+  try {
+    const filename = path.basename(req.params.filename);
+    const disk = path.join(UPLOADS_DIR, filename);
+    try {
+      await fs.access(disk);
+      res.type('png');
+      return res.sendFile(disk);
+    } catch {}
+    const buf = await readGridByName(filename);
+    if (!buf) return res.status(404).json({ success: false, error: 'File non trovato' });
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'public, max-age=31536000');
+    res.send(buf);
+  } catch (error) {
+    next(error);
+  }
+});
 
 router.use(authenticate);
 
@@ -119,19 +232,30 @@ async function saveGeneratedImage(result, prefix) {
   const imageName = `${prefix}-${Date.now()}.png`;
   const dest = path.join(UPLOADS_DIR, imageName);
 
+  let buffer;
   if (result.b64_json) {
-    await fs.writeFile(dest, Buffer.from(result.b64_json, 'base64'));
+    buffer = Buffer.from(result.b64_json, 'base64');
   } else if (result.url) {
     const imageResponse = await fetch(result.url);
     if (!imageResponse.ok) {
       throw new Error(`Download immagine fallito (${imageResponse.status})`);
     }
-    await fs.writeFile(dest, Buffer.from(await imageResponse.arrayBuffer()));
+    buffer = Buffer.from(await imageResponse.arrayBuffer());
   } else {
     throw new Error('Nessuna immagine restituita dal modello');
   }
-
-  return { imageName, imageUrl: `/uploads/${imageName}` };
+  await fs.writeFile(dest, buffer);
+  let gridFileId = null;
+  try {
+    gridFileId = await putInGrid(imageName, buffer);
+  } catch (err) {
+    console.error('GridFS save failed', err.message);
+  }
+  return {
+    imageName,
+    imageUrl: `/api/renders/media/${imageName}`,
+    gridFileId
+  };
 }
 
 async function generateInteriorImage(prompt, refPaths = []) {
@@ -185,7 +309,10 @@ const VIEW_PROMPTS = {
 
 router.get('/', async (req, res, next) => {
   try {
-    const renders = await Render.find({ adminId: req.adminId }).sort({ createdAt: -1 }).limit(80);
+    const renders = await Render.find({ adminId: req.adminId })
+      .populate('clientId', 'name')
+      .sort({ createdAt: -1 })
+      .limit(120);
     res.json({ success: true, data: renders });
   } catch (error) {
     next(error);
@@ -198,16 +325,17 @@ router.get('/file/:id', async (req, res, next) => {
     if (!render || !render.imageFile) {
       return res.status(404).json({ success: false, error: 'File non trovato' });
     }
-    const filePath = path.join(UPLOADS_DIR, render.imageFile);
-    try {
-      await fs.access(filePath);
-    } catch {
-      return res.status(404).json({ success: false, error: 'File non più disponibile sul server (storage temporaneo). Rigenera il render.' });
-    }
     const safeName = `${(render.title || 'render').replace(/[^\w\-]+/g, '_')}-HQ.png`;
     res.setHeader('Content-Type', 'image/png');
     res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
-    res.sendFile(filePath);
+    const filePath = path.join(UPLOADS_DIR, render.imageFile);
+    try {
+      await fs.access(filePath);
+      return res.sendFile(filePath);
+    } catch {}
+    const buf = await readGridByName(render.imageFile);
+    if (!buf) return res.status(404).json({ success: false, error: 'File non trovato in archivio' });
+    res.send(buf);
   } catch (error) {
     next(error);
   }
@@ -374,15 +502,16 @@ Colors/materials overlay: ${colors || 'keep existing materials unless specified'
 Same proportions and vanishing points as the source. No text, no watermark, no people.`;
 
     const item = await generateInteriorImage(prompt, refs);
-    const { imageName, imageUrl } = await saveGeneratedImage(item, 'render');
+    const savedPhoto = await saveGeneratedImage(item, 'render');
 
     const render = await Render.create({
       clientId: client._id,
       adminId: req.adminId,
       title: `Render AI - ${new Date().toLocaleDateString('it-IT')}`,
       description: 'Render da rilievo foto/modello 3D',
-      imageUrl,
-      imageFile: imageName,
+      imageUrl: savedPhoto.imageUrl,
+      imageFile: savedPhoto.imageName,
+      gridFileId: savedPhoto.gridFileId,
       style: style || 'contemporaneo',
       lighting: lighting || 'mista',
       colors: colors ? String(colors).split(',').map((c) => c.trim()).filter(Boolean) : [],
@@ -393,7 +522,7 @@ Same proportions and vanishing points as the source. No text, no watermark, no p
       success: true,
       data: {
         renderId: render._id,
-        renderUrl: imageUrl,
+        renderUrl: savedPhoto.imageUrl,
         title: render.title,
         createdAt: render.createdAt
       }
@@ -518,6 +647,7 @@ Same furniture layout and materials across views. No text, no watermark, no logo
         description: brief || `${roomType} - ${stylesText} - ${floorFinish} / ${wallFinish}`,
         imageUrl: saved.imageUrl,
         imageFile: saved.imageName,
+        gridFileId: saved.gridFileId,
         room: roomType,
         style: stylesText,
         colors,
@@ -564,6 +694,53 @@ router.get('/configurations/:clientId', async (req, res, next) => {
       renderType: 'config'
     }).sort({ createdAt: -1 });
     res.json({ success: true, data: configurations });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/bulk-delete', async (req, res, next) => {
+  try {
+    const ids = Array.isArray(req.body.ids) ? req.body.ids : [];
+    if (!ids.length) return res.status(400).json({ success: false, error: 'Nessun render selezionato' });
+    const docs = await Render.find({ _id: { $in: ids }, adminId: req.adminId });
+    for (const render of docs) {
+      if (render.imageFile) await fs.unlink(path.join(UPLOADS_DIR, render.imageFile)).catch(() => {});
+      if (render.imageFile) {
+        try {
+          const bucket = gridBucket();
+          const files = await bucket.find({ filename: render.imageFile }).toArray();
+          for (const f of files) await bucket.delete(f._id);
+        } catch {}
+      }
+    }
+    await Render.deleteMany({ _id: { $in: docs.map((d) => d._id) }, adminId: req.adminId });
+    res.json({ success: true, deleted: docs.length });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/bulk-zip', async (req, res, next) => {
+  try {
+    const ids = Array.isArray(req.body.ids) ? req.body.ids : [];
+    if (!ids.length) return res.status(400).json({ success: false, error: 'Nessun render selezionato' });
+    const docs = await Render.find({ _id: { $in: ids }, adminId: req.adminId });
+    const files = [];
+    for (const render of docs) {
+      if (!render.imageFile) continue;
+      let buf;
+      try {
+        buf = await fs.readFile(path.join(UPLOADS_DIR, render.imageFile));
+      } catch {
+        buf = await readGridByName(render.imageFile);
+      }
+      if (buf) files.push({ name: `${(render.title || 'render').replace(/[^\w\-]+/g, '_')}-${String(render._id).slice(-6)}.png`, data: buf });
+    }
+    if (!files.length) return res.status(404).json({ success: false, error: 'Nessun file disponibile' });
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', 'attachment; filename="renders-archivio.zip"');
+    res.send(buildZip(files));
   } catch (error) {
     next(error);
   }
