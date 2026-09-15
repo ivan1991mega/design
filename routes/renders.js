@@ -4,6 +4,8 @@ import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import OpenAI, { toFile } from 'openai';
+import zlib from 'zlib';
+import { promisify } from 'util';
 
 import mongoose from 'mongoose';
 import Render from '../models/Render.js';
@@ -153,62 +155,306 @@ const storage = multer.diskStorage({
 });
 
 const IMAGE_MIME = ['image/jpeg', 'image/png', 'image/webp'];
-const MODEL_EXT = ['.obj', '.mtl', '.stl', '.gltf', '.glb', '.dae'];
+const MODEL_EXT = ['.obj', '.mtl', '.stl', '.gltf', '.glb', '.dae', '.zip', '.txt'];
+const MODEL_MIME = [
+  'application/octet-stream',
+  'application/zip',
+  'application/x-zip-compressed',
+  'application/obj',
+  'model/obj',
+  'text/plain',
+  'text/x-obj'
+];
+
+const inflateRaw = promisify(zlib.inflateRaw);
 
 const upload = multer({
   storage,
   limits: { fileSize: 40 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const ext = path.extname(file.originalname || '').toLowerCase();
-    if (IMAGE_MIME.includes(file.mimetype) || MODEL_EXT.includes(ext)) cb(null, true);
-    else cb(new Error('Formato non supportato. Usa JPG/PNG/WebP oppure OBJ/STL/glTF/GLB/DAE (da SketchUp esporta OBJ).'));
+    const mime = (file.mimetype || '').toLowerCase();
+    if (IMAGE_MIME.includes(mime) || MODEL_EXT.includes(ext) || MODEL_MIME.includes(mime) || mime.startsWith('model/')) {
+      cb(null, true);
+    } else cb(new Error('Formato non supportato. Usa JPG/PNG, OBJ, MTL o uno ZIP con OBJ+MTL.'));
   }
 });
 
 const analyzeUpload = upload.fields([
   { name: 'image', maxCount: 1 },
-  { name: 'model', maxCount: 1 }
+  { name: 'model', maxCount: 1 },
+  { name: 'mtl', maxCount: 1 }
 ]);
 
-function parseObjSummary(text) {
-  const verts = [];
-  const names = new Set();
-  const mats = new Set();
+function normName(s) {
+  return String(s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[_#\-]+/g, ' ');
+}
+
+const ROOM_KEYWORDS = {
+  bagno: ['bagno', 'bathroom', 'bath ', ' wc', 'wc ', 'cassetta', 'toilet', 'bidet', 'doccia', 'shower', 'lavabo', 'lavandino', 'washbasin', 'vasca', 'bathtub', 'sanitari', 'rubinet', 'piatto doccia', 'box doccia', 'mobile bagno', 'termoarredo', 'scaldasalviette', 'water ', 'w.c', 'sospesi', 'flessa'],
+  camera: ['letto', 'bed ', 'bedroom', 'camera da letto', 'materasso', 'mattress', 'comodino', 'nightstand', 'testata', 'headboard', 'piumone'],
+  cucina: ['cucina', 'kitchen', 'piano cottura', 'cooktop', 'lavello cucina', 'fridge', 'frigo', 'forno', 'oven', 'cappa', 'isola cucina', 'pensile'],
+  salotto: ['salotto', 'soggiorno', 'living', 'divano', 'sofa', 'tv ', 'camino'],
+  ufficio: ['scrivania', 'desk', 'ufficio', 'office', 'monitor', 'workstation'],
+  wellness: ['sauna', 'hammam', 'spa', 'wellness', 'idromassaggio'],
+  palestra: ['gym', 'palestra', 'rack', 'tapis', 'pesi'],
+  terrazzo: ['terrazzo', 'terrace', 'balcone'],
+  giardino: ['giardino', 'garden', 'prato'],
+  piscina: ['piscina', 'pool'],
+  cabina: ['cabina', 'walk in', 'wardrobe', 'guardaroba']
+};
+
+const FIXTURE_MAP = [
+  ['sanitari sospesi', ['toilet', 'vaso', 'cassetta', 'bull_sospesi', 'wc']],
+  ['bidet', ['bidet']],
+  ['lavabo', ['lavabo', 'lavandino', 'washbasin', 'catino']],
+  ['box walk-in', ['doccia', 'shower']],
+  ['vasca freestanding', ['vasca', 'bathtub']],
+  ['rubinetteria', ['rubinet', 'mixer', 'faucet', 'flessa']],
+  ['specchio', ['specchio', 'mirror']],
+  ['finestra', ['finestra', 'window']],
+  ['isola centrale', ['isola']],
+  ['cappa sospesa', ['cappa', 'hood']]
+];
+
+function scoreText(text) {
+  const t = ' ' + normName(text) + ' ';
+  const scores = {};
+  for (const [room, kws] of Object.entries(ROOM_KEYWORDS)) {
+    scores[room] = kws.reduce((n, kw) => n + (t.includes(kw) ? 1 : 0), 0);
+  }
+  if (scores.bagno > 0) scores.camera = 0;
+  let best = 'altro';
+  let bestN = 0;
+  for (const [k, v] of Object.entries(scores)) {
+    if (v > bestN) { bestN = v; best = k; }
+  }
+  return { best: bestN ? best : 'altro', scores, confidence: bestN };
+}
+
+function classifyPart(name) {
+  const t = normName(name);
+  if (/(paviment|floor|solaio|slab|deck)/.test(t)) return 'floor';
+  if (/(soffitto|ceiling|controsoff)/.test(t)) return 'ceiling';
+  if (/(muro|muratura|parete|wall|partition|tramezzo)/.test(t)) return 'wall';
+  if (/(porta|door|finestra|window|infisso)/.test(t)) return 'opening';
+  if (/(toilet|vaso|bidet|doccia|shower|lavabo|vasca|sanitari|cassetta|sospesi|\bwc\b)/.test(t)) return 'bathroom-fixture';
+  if (/(letto|bed|comodino)/.test(t)) return 'bedroom-furniture';
+  if (/(cucina|kitchen|forno|cappa|isola)/.test(t)) return 'kitchen-fixture';
+  return 'object';
+}
+
+function sketchupLabel(line) {
+  const parts = String(line).split(/\s+/).filter(Boolean);
+  const useful = parts.filter((p) => !/^mesh\d*$/i.test(p) && !/^model$/i.test(p) && !/^group\d*$/i.test(p) && !/^skp/i.test(p));
+  const hit = useful.find((p) => /doccia|lavabo|bidet|cassetta|wc|vaso|finestra|paviment|parete|bagno/i.test(p));
+  return hit || useful[useful.length - 1] || parts[0] || line;
+}
+
+function catalogFinish(name) {
+  const raw = String(name || '').replace(/_/g, ' ').trim();
+  const t = normName(raw);
+  if (/60\s*x\s*120|60x120/.test(t)) return `gres lastre 60x120 «${raw}»`;
+  if (/30\s*x\s*60|30x60|80\s*x\s*80/.test(t)) return `gres «${raw}»`;
+  if (/(maison|motley|sigma|marazzi|atlas|florim|casalgrande|fmg)/.test(t)) return `gres catalogo «${raw}»`;
+  return '';
+}
+
+function guessFinishFromName(name, role) {
+  const catalog = catalogFinish(name);
+  if (catalog) return catalog;
+  const t = normName(name);
+  if (role === 'floor') {
+    if (/(gres|tile|ceram|porcel)/.test(t)) return 'gres effetto pietra';
+    if (/(cotto|terracotta)/.test(t)) return 'cotto fatto a mano';
+    if (/(cement|microcement)/.test(t)) return 'microcemento spatolato';
+    if (/(parquet|wood|legno|rovere|oak|noce)/.test(t)) return 'parquet listoni';
+  }
+  if (role === 'wall') {
+    if (/(zellige|tile|piastrel)/.test(t)) return 'zellige artigianali';
+    if (/(boiserie|cannett|wood panel)/.test(t)) return 'boiserie cannettata';
+    if (/(calce|lime|argilla|clay)/.test(t)) return 'calce spatolata';
+    if (/(gres|stone|pietra|marmo)/.test(t)) return 'lastre gres pietra';
+    if (/(parati|wallpaper)/.test(t)) return 'carta da parati';
+  }
+  return '';
+}
+
+function parseObjSummary(text, mtlText) {
+  const vertsMin = [Infinity, Infinity, Infinity];
+  const vertsMax = [-Infinity, -Infinity, -Infinity];
+  let vertCount = 0;
   let faces = 0;
-  for (const raw of text.split(/\r?\n/)) {
+  let current = 'oggetto';
+  let currentMat = '';
+  let unitsComment = '';
+  const objects = new Map();
+  const matsUsed = new Set();
+  const matFaces = new Map();
+  const allLabels = [];
+  let mtllib = '';
+  const ensure = (n) => {
+    if (!objects.has(n)) objects.set(n, { name: n, materials: new Set(), faces: 0, role: classifyPart(n) });
+    return objects.get(n);
+  };
+
+  for (const raw of String(text).split(/\r?\n/)) {
     const line = raw.trim();
-    if (line.startsWith('v ')) {
+    if (!line) continue;
+    if (line[0] === '#') {
+      if (/file units/i.test(line)) unitsComment = line.replace(/^#\s*/,'');
+      if (line.startsWith('# object ') || line.startsWith('# Object ')) {
+        current = sketchupLabel(line.replace(/^#\s*object\s+/i, ''));
+        ensure(current);
+        allLabels.push(current);
+      }
+      continue;
+    }
+    if (line.startsWith('mtllib ')) mtllib = line.slice(7).trim();
+    else if (line.startsWith('o ') || line.startsWith('g ')) {
+      current = sketchupLabel(line.slice(2).trim());
+      ensure(current);
+      allLabels.push(line.slice(2).trim());
+    } else if (line.startsWith('usemtl ')) {
+      currentMat = line.slice(7).trim();
+      matsUsed.add(currentMat);
+      ensure(current).materials.add(currentMat);
+    } else if (line.startsWith('v ')) {
       const p = line.split(/\s+/);
       const x = Number(p[1]), y = Number(p[2]), z = Number(p[3]);
-      if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) verts.push([x, y, z]);
-    } else if (line.startsWith('f ')) faces += 1;
-    else if (line.startsWith('o ') || line.startsWith('g ')) names.add(line.slice(2).trim());
-    else if (line.startsWith('usemtl ')) mats.add(line.slice(7).trim());
+      if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) {
+        vertCount += 1;
+        if (x < vertsMin[0]) vertsMin[0] = x; if (y < vertsMin[1]) vertsMin[1] = y; if (z < vertsMin[2]) vertsMin[2] = z;
+        if (x > vertsMax[0]) vertsMax[0] = x; if (y > vertsMax[1]) vertsMax[1] = y; if (z > vertsMax[2]) vertsMax[2] = z;
+      }
+    } else if (line.startsWith('f ')) {
+      faces += 1;
+      ensure(current).faces += 1;
+      if (currentMat) matFaces.set(currentMat, (matFaces.get(currentMat) || 0) + 1);
+    }
   }
-  if (!verts.length) return { format: 'obj', objects: [...names], materials: [...mats], faces, note: 'OBJ senza vertici leggibili' };
-  let min = [Infinity, Infinity, Infinity];
-  let max = [-Infinity, -Infinity, -Infinity];
-  for (const [x, y, z] of verts) {
-    if (x < min[0]) min[0] = x; if (y < min[1]) min[1] = y; if (z < min[2]) min[2] = z;
-    if (x > max[0]) max[0] = x; if (y > max[1]) max[1] = y; if (z > max[2]) max[2] = z;
+
+  const mtl = mtlText ? parseMtl(mtlText) : {};
+  const objList = [...objects.values()].map((o) => ({
+    name: o.name,
+    role: o.role,
+    faces: o.faces,
+    materials: [...o.materials].slice(0, 8)
+  })).sort((a, b) => b.faces - a.faces).slice(0, 40);
+
+  const blob = allLabels.join(' ') + ' ' + [...matsUsed].join(' ');
+  const roomGuess = scoreText(blob);
+  const fixtures = [];
+  const blobN = normName(blob);
+  for (const [label, kws] of FIXTURE_MAP) {
+    if (kws.some((k) => blobN.includes(k))) fixtures.push(label);
   }
-  const size = [max[0] - min[0], max[1] - min[1], max[2] - min[2]];
+
+  const mapped = Object.values(mtl).filter((m) => m.map);
+  const missingMaps = mapped.map((m) => m.map);
+  const tiles = [...matsUsed]
+    .map((n) => ({ name: n, faces: matFaces.get(n) || 0, finish: catalogFinish(n) || guessFinishFromName(n, 'wall') }))
+    .filter((t) => t.finish)
+    .sort((a, b) => b.faces - a.faces);
+
+  const wallGuess = (tiles[0] && tiles[0].finish) || guessFinishFromName([...matsUsed].join(' '), 'wall');
+  const floorGuess = (tiles[1] && tiles[1].finish && tiles[1].name !== tiles[0]?.name)
+    ? tiles[1].finish
+    : (tiles[0] ? 'gres formato diverso dal rivestimento, tono coordinato ma non uguale' : guessFinishFromName([...matsUsed].join(' '), 'floor'));
+
+  const size = vertCount
+    ? [vertsMax[0] - vertsMin[0], vertsMax[1] - vertsMin[1], vertsMax[2] - vertsMin[2]]
+    : [0, 0, 0];
   const axis = [...size].sort((a, b) => b - a);
-  const unitsGuess = axis[0] > 80 ? 'centimetri o millimetri' : axis[0] > 8 ? 'metri' : 'unità SketchUp';
+  const unitsGuess = /centimet/i.test(unitsComment) ? 'centimetri'
+    : axis[0] > 80 ? 'centimetri o millimetri' : axis[0] > 8 ? 'metri' : 'unita SketchUp';
+
+  const bathNote = roomGuess.best === 'bagno'
+    ? 'Rilevato BAGNO (doccia, lavabo, bidet, cassetta WC). Vietato interpretarlo come camera da letto.'
+    : '';
+  const mapNote = missingMaps.length
+    ? ` Texture catalogo citate nel MTL ma assenti nello ZIP: ${missingMaps.slice(0, 6).join(', ')}. Esporta da SketchUp anche la cartella delle immagini, o mettile nello ZIP.`
+    : '';
+
   return {
     format: 'obj',
-    vertices: verts.length,
+    vertices: vertCount,
     faces,
-    objects: [...names].slice(0, 40),
-    materials: [...mats].slice(0, 30),
+    mtllib,
+    unitsGuess,
     bbox: {
       width: Number(size[0].toFixed(3)),
       depth: Number(size[2].toFixed(3)),
       height: Number(size[1].toFixed(3))
     },
-    unitsGuess,
-    proportions: `ingombro ${size[0].toFixed(2)} x ${size[2].toFixed(2)} x h ${size[1].toFixed(2)}`
+    proportions: 'ingombro ' + size[0].toFixed(2) + ' x ' + size[2].toFixed(2) + ' x h ' + size[1].toFixed(2) + ' (' + unitsGuess + ')',
+    suggestedRoom: roomGuess.best,
+    roomConfidence: roomGuess.confidence,
+    roomScores: roomGuess.scores,
+    fixtures,
+    objects: objList,
+    materials: [...matsUsed].slice(0, 40),
+    catalogTiles: tiles.slice(0, 6),
+    mtlColors: Object.values(mtl).filter((m) => m.hex).slice(0, 12).map((m) => m.name + ' ' + m.hex),
+    missingMaps,
+    floorGuess,
+    wallGuess,
+    note: (bathNote + mapNote).trim()
   };
+}
+
+function parseMtl(text) {
+  const mats = {};
+  let cur = null;
+  for (const raw of String(text).split(/\r?\n/)) {
+    const line = raw.trim();
+    if (line.startsWith('newmtl ')) {
+      cur = line.slice(7).trim();
+      mats[cur] = { name: cur };
+    } else if (cur && /^Kd\s/.test(line)) {
+      const p = line.split(/\s+/);
+      const r = Number(p[1]), g = Number(p[2]), b = Number(p[3]);
+      if ([r, g, b].every(Number.isFinite)) {
+        const hex = '#' + [r, g, b].map((v) => Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, '0')).join('');
+        mats[cur].kd = [r, g, b];
+        mats[cur].hex = hex;
+      }
+    } else if (cur && /^map_Kd\s/.test(line)) {
+      mats[cur].map = line.replace(/^map_Kd\s+/, '').trim();
+    }
+  }
+  return mats;
+}
+
+async function unzipEntries(buf) {
+  const files = {};
+  let i = 0;
+  while (i + 30 <= buf.length) {
+    if (buf.readUInt32LE(i) !== 0x04034b50) break;
+    const method = buf.readUInt16LE(i + 8);
+    const flags = buf.readUInt16LE(i + 6);
+    const compSize = buf.readUInt32LE(i + 18);
+    const nameLen = buf.readUInt16LE(i + 26);
+    const extraLen = buf.readUInt16LE(i + 28);
+    const name = buf.slice(i + 30, i + 30 + nameLen).toString('utf8');
+    const dataStart = i + 30 + nameLen + extraLen;
+    if (flags & 8) break;
+    const data = buf.slice(dataStart, dataStart + compSize);
+    let out = data;
+    if (method === 8) out = await inflateRaw(data);
+    else if (method !== 0) { i = dataStart + compSize; continue; }
+    files[name.replace(/\\/g, '/')] = out;
+    i = dataStart + compSize;
+  }
+  return files;
+}
+
+function looksLikeObj(text) {
+  return /(^|\n)\s*(v |f |o |g |mtllib |usemtl )/m.test(String(text).slice(0, 8000));
 }
 
 function parseStlSummary(buf) {
@@ -268,7 +514,9 @@ async function generateInteriorImage(prompt, refPaths = []) {
     const images = [];
     for (const p of refPaths) {
       const buf = await fs.readFile(p);
-      images.push(await toFile(buf, path.basename(p), { type: 'image/png' }));
+      const extn = path.extname(p).toLowerCase();
+      const type = extn === '.jpg' || extn === '.jpeg' ? 'image/jpeg' : extn === '.webp' ? 'image/webp' : 'image/png';
+      images.push(await toFile(buf, path.basename(p), { type }));
     }
     response = await openai.images.edit({
       model,
@@ -291,7 +539,9 @@ async function generateInteriorImage(prompt, refPaths = []) {
 const textureUpload = upload.fields([
   { name: 'floorTexture', maxCount: 1 },
   { name: 'wallTexture', maxCount: 1 },
-  { name: 'planImage', maxCount: 1 }
+  { name: 'planImage', maxCount: 1 },
+  { name: 'model', maxCount: 1 },
+  { name: 'mtl', maxCount: 1 }
 ]);
 
 function optionalMultipart(req, res, next) {
@@ -380,25 +630,82 @@ router.post('/upload', upload.single('image'), async (req, res, next) => {
 
 router.post('/analyze-image', analyzeUpload, async (req, res, next) => {
   try {
+    const pastedNames = String(req.body?.objectList || '').trim();
     const imageFile = req.files?.image?.[0] || (req.file?.mimetype?.startsWith('image/') ? req.file : null);
-    const modelFile = req.files?.model?.[0] || (!imageFile ? req.file : null);
-    if (!imageFile && !modelFile) {
-      return res.status(400).json({ success: false, error: 'Carica una foto PNG/JPG e/o un modello OBJ/STL/glTF esportato da SketchUp' });
+    let modelFile = req.files?.model?.[0] || (!imageFile ? req.file : null);
+    const mtlUpload = req.files?.mtl?.[0];
+    if (!imageFile && !modelFile && !pastedNames) {
+      return res.status(400).json({ success: false, error: 'Carica una foto, un OBJ (o ZIP con OBJ+MTL), oppure incolla i nomi dei componenti SketchUp' });
     }
 
     const ext = modelFile ? path.extname(modelFile.originalname || '').toLowerCase() : '';
     if (ext === '.skp') {
-      return res.status(400).json({ success: false, error: 'Il file .skp di SketchUp non è leggibile. Esporta in OBJ (File → Esporta → Oggetto 3D) e ricarica.' });
+      return res.status(400).json({ success: false, error: 'Il file .skp di SketchUp non è leggibile. Esporta in OBJ (File → Esporta → Oggetto 3D) oppure metti OBJ+MTL in uno ZIP.' });
     }
 
     let mesh = null;
-    if (modelFile && ext === '.obj') {
+    let mtlText = mtlUpload ? await fs.readFile(mtlUpload.path, 'utf8') : '';
+
+    let zipMaps = [];
+    if (modelFile && ext === '.zip') {
+      const entries = await unzipEntries(await fs.readFile(modelFile.path));
+      const objName = Object.keys(entries).find((n) => n.toLowerCase().endsWith('.obj') && !n.includes('__MACOSX'));
+      const mtlName = Object.keys(entries).find((n) => n.toLowerCase().endsWith('.mtl') && !n.includes('__MACOSX'));
+      if (!objName) {
+        return res.status(400).json({ success: false, error: 'Nello ZIP non c’è un file .obj' });
+      }
+      if (mtlName) mtlText = entries[mtlName].toString('utf8');
+      mesh = parseObjSummary(entries[objName].toString('utf8'), mtlText);
+      await fs.mkdir(UPLOADS_DIR, { recursive: true });
+      for (const [name, buf] of Object.entries(entries)) {
+        const low = name.replace(/\\/g, '/').toLowerCase();
+        if (low.includes('__macosx')) continue;
+        if (!/\.(jpe?g|png|webp)$/.test(low)) continue;
+        if (!buf || buf.length < 800) continue;
+        const base = path.basename(name).replace(/[^\w.\-]+/g, '_');
+        const filename = `tex-${Date.now()}-${base}`;
+        await fs.writeFile(path.join(UPLOADS_DIR, filename), buf);
+        zipMaps.push({ original: name, basename: path.basename(name), filename, bytes: buf.length });
+      }
+    } else if (modelFile && (ext === '.obj' || ext === '.txt' || ext === '')) {
       const text = await fs.readFile(modelFile.path, 'utf8');
-      mesh = parseObjSummary(text);
+      if (looksLikeObj(text) || ext === '.obj') mesh = parseObjSummary(text, mtlText);
+      else {
+        return res.status(400).json({ success: false, error: 'Il file non sembra un OBJ. Esporta da SketchUp in OBJ o metti OBJ+MTL in uno ZIP.' });
+      }
     } else if (modelFile && ext === '.stl') {
       mesh = parseStlSummary(await fs.readFile(modelFile.path));
     } else if (modelFile && (ext === '.gltf' || ext === '.glb' || ext === '.dae')) {
       mesh = { format: ext.slice(1), file: modelFile.originalname, bytes: modelFile.size };
+    }
+
+    if (pastedNames) {
+      mesh = mesh || {
+        format: 'names',
+        objects: [],
+        fixtures: [],
+        materials: [],
+        suggestedRoom: 'altro',
+        roomConfidence: 0
+      };
+      const extra = scoreText(pastedNames);
+      if (extra.confidence >= (mesh.roomConfidence || 0)) {
+        mesh.suggestedRoom = extra.best;
+        mesh.roomConfidence = extra.confidence;
+        mesh.roomScores = extra.scores;
+      }
+      if (mesh.suggestedRoom === 'bagno') {
+        mesh.note = 'Rilevato BAGNO. Vietato interpretarlo come camera da letto.';
+      }
+      const blobN = normName(pastedNames);
+      mesh.fixtures = mesh.fixtures || [];
+      for (const [label, kws] of FIXTURE_MAP) {
+        if (kws.some((k) => blobN.includes(k)) && !mesh.fixtures.includes(label)) mesh.fixtures.push(label);
+      }
+      pastedNames.split(/[\n,;]+/).map((s) => s.trim()).filter(Boolean).slice(0, 40).forEach((name) => {
+        mesh.objects = mesh.objects || [];
+        mesh.objects.push({ name, role: classifyPart(name), faces: 0, materials: [] });
+      });
     }
 
     const modelBrief = String(req.body?.modelBrief || '').trim();
@@ -429,7 +736,11 @@ Elenca in italiano:
 6. Luce: direzione, temperatura, ombre
 7. Cosa è un vincolo strutturale e cosa è modificabile
 8. Istruzioni precise per un motore di render: stessa inquadratura, stesse proporzioni, stesso punto di fuga
-${mesh ? `Dati mesh allegata: ${JSON.stringify(mesh)} — usali per quote e oggetti nominati.` : ''}
+${mesh ? `DATI MESH (vincolanti). Stanza rilevata: ${mesh.suggestedRoom}. ${mesh.note || ''}
+Oggetti: ${(mesh.objects||[]).slice(0,25).map(o=>o.name+'['+o.role+']').join(', ')}
+Quote: ${mesh.proportions}
+Se suggestedRoom è bagno: è un BAGNO, mai una camera da letto, niente letto/piumoni.
+${JSON.stringify({ fixtures: mesh.fixtures, materials: mesh.materials, mtlColors: mesh.mtlColors })}` : ''}
 ${modelBrief ? `DIRETTIVE DELL'UTENTE SUL MODELLO (prioritarie): ${modelBrief}` : ''}`
               }
             ]
@@ -444,11 +755,13 @@ ${modelBrief ? `DIRETTIVE DELL'UTENTE SUL MODELLO (prioritarie): ${modelBrief}` 
         max_tokens: 1200,
         messages: [{
           role: 'user',
-          content: `Da questo modello 3D esportato da SketchUp/CAD ricostruisci in italiano una lettura architettonica vincolante per un render.
-Mesh: ${JSON.stringify(mesh)}
-Deduci destinazione d'uso dai nomi oggetti, proporzioni della bounding box, possibili muri/pavimento.
-${modelBrief ? `DIRETTIVE DELL'UTENTE (prioritarie): ${modelBrief}` : ''}
-Scrivi layout, quote relative, cosa non va inventato.`
+          content: `Da questo modello 3D SketchUp ricostruisci una lettura architettonica VINCOLANTE.
+Stanza rilevata dal parser: ${mesh.suggestedRoom} (${mesh.note || 'nessuna nota'}).
+Se è bagno: descrivi sanitari, doccia/vasca, lavabo. VIETATO: letto, camera, piumoni.
+L'OBJ è GEOMETRIA. I materiali scelti dall'utente (se presenti nelle direttive) vincono su colori placeholder del modello.
+Mesh: ${JSON.stringify({ suggestedRoom: mesh.suggestedRoom, fixtures: mesh.fixtures, objects: (mesh.objects||[]).slice(0,30), proportions: mesh.proportions, materials: mesh.materials, mtlColors: mesh.mtlColors, floorGuess: mesh.floorGuess, wallGuess: mesh.wallGuess })}
+${modelBrief ? `DIRETTIVE UTENTE (prioritarie, anche su pavimento/pareti/colori): ${modelBrief}` : ''}
+Scrivi in italiano: tipo stanza, layout, quote, aperture, elenco sanitari/arredi da mantenere.`
         }]
       });
       vision = response.choices?.[0]?.message?.content || '';
@@ -460,11 +773,63 @@ Scrivi layout, quote relative, cosa non va inventato.`
       mesh ? `\n\nDATI MODELLO 3D\n${JSON.stringify(mesh, null, 2)}` : ''
     ].join('').trim();
 
+    let textureRefs = [];
+    if (mesh && zipMaps.length) {
+      const missing = mesh.missingMaps || [];
+      const still = [];
+      const found = [];
+      for (const m of missing) {
+        const b = path.basename(m).toLowerCase();
+        const hit = zipMaps.find((s) => s.basename.toLowerCase() === b);
+        if (hit) found.push({ ...hit, mtlMap: m });
+        else still.push(m);
+      }
+      // also keep unmatched jpg as extra catalog refs
+      for (const s of zipMaps) {
+        if (!found.some((f) => f.filename === s.filename)) found.push(s);
+      }
+      mesh.missingMaps = still;
+      if (!still.length && mesh.note) {
+        mesh.note = String(mesh.note).replace(/Texture catalogo citate[\s\S]*?ZIP\./, '').trim();
+      }
+      const tiles = mesh.catalogTiles || [];
+      const pickFor = (finish) => {
+        const n = normName(finish || '');
+        return found.find((f) => n && normName(f.basename).split(/[.\s_-]+/).some((p) => p.length > 3 && n.includes(p)));
+      };
+      const floorHit = pickFor(mesh.floorGuess) || found[1] || found[0];
+      const wallHit = pickFor(mesh.wallGuess) || found[0];
+      const uniq = [];
+      for (const h of [floorHit, wallHit, ...found]) {
+        if (h && !uniq.some((u) => u.filename === h.filename)) uniq.push(h);
+      }
+      textureRefs = uniq.slice(0, 4).map((h, i) => ({
+        filename: h.filename,
+        url: `/api/renders/media/${h.filename}`,
+        role: i === 0 ? 'floor' : i === 1 ? 'wall' : 'catalog'
+      }));
+      if (textureRefs.length) {
+        mesh.note = [mesh.note, `Usate ${textureRefs.length} texture dallo ZIP come riferimento pavimento/pareti.`].filter(Boolean).join(' ');
+      }
+    }
+
+    const suggested = mesh ? {
+      roomType: mesh.suggestedRoom || 'altro',
+      fixtures: mesh.fixtures || [],
+      floorGuess: mesh.floorGuess || '',
+      wallGuess: mesh.wallGuess || '',
+      colors: mesh.mtlColors || [],
+      note: mesh.note || '',
+      textureRefs
+    } : null;
+
     res.json({
       success: true,
       data: {
         analysis,
         mesh,
+        suggested,
+        textureRefs,
         sourceImage: imageFile ? imageFile.filename : null,
         sourceModel: modelFile ? modelFile.filename : null
       }
@@ -476,7 +841,7 @@ Scrivi layout, quote relative, cosa non va inventato.`
 
 router.post('/generate-render', async (req, res, next) => {
   try {
-    const { clientId, analysis, style, lighting, colors, sourceImage, modelBrief } = req.body;
+    const { clientId, analysis, style, lighting, colors, sourceImage, modelBrief, roomType, floorFinish, wallFinish, fixtures, textureRefs } = req.body;
     if (!analysis) {
       return res.status(400).json({ success: false, error: 'Manca l\'analisi del file' });
     }
@@ -490,16 +855,37 @@ router.post('/generate-render', async (req, res, next) => {
         refs.push(p);
       } catch {}
     }
+    const extraRefs = Array.isArray(textureRefs) ? textureRefs : [];
+    for (const t of extraRefs.slice(0, 4)) {
+      const name = typeof t === 'string' ? t : t.filename;
+      if (!name) continue;
+      const p = path.join(UPLOADS_DIR, path.basename(name));
+      try {
+        await fs.access(p);
+        refs.push(p);
+      } catch {}
+    }
 
-    const prompt = `Rebuild this exact space as a photorealistic architectural photograph.
-Follow the survey/analysis as constraints. Do NOT change room shape, window/door positions, camera angle or furniture layout unless asked.
-Analysis:
-${String(analysis).slice(0, 2500)}
-${modelBrief ? `User directives on the 3D/SketchUp file (highest priority): ${modelBrief}` : ''}
-Requested style overlay: ${style || 'keep existing character'}
-Lighting: ${lighting || 'keep existing light direction'}
-Colors/materials overlay: ${colors || 'keep existing materials unless specified'}
-Same proportions and vanishing points as the source. No text, no watermark, no people.`;
+    const room = String(roomType || '').trim();
+    const floor = String(floorFinish || '').trim();
+    const wall = String(wallFinish || '').trim();
+    const fx = Array.isArray(fixtures) ? fixtures.filter(Boolean).join(', ') : String(fixtures || '');
+    const isBath = /bagno|bath/i.test(room + ' ' + String(analysis).slice(0, 400));
+    const prompt = `Photorealistic architectural photograph of this EXACT space.
+OBJ/SketchUp = GEOMETRY ONLY (room shape, openings, fixture positions). User materials OVERRIDE any OBJ placeholder colors.
+ROOM TYPE: ${room || 'see analysis'}${isBath ? '. THIS IS A BATHROOM, never a bedroom. Forbidden: bed, pillows, duvet, nightstands. Required: toilet and/or bidet, washbasin, shower or bathtub, bathroom tapware.' : ''}
+FLOOR (only the floor plane, never the walls): ${floor || '(keep distinct from walls)'}
+WALLS (only vertical surfaces, never the floor): ${wall || '(keep distinct from floor)'}
+CRITICAL: floor and walls MUST be different materials and different colours. No wrapping the same texture onto both.
+${fx ? 'Fixtures that MUST appear in the correct places: ' + fx : ''}
+User directives: ${modelBrief || 'none'}
+Style: ${style || 'contemporary Italian interior'}
+Lighting: ${lighting || 'mixed natural and artificial'}
+Palette overlay: ${colors || 'as specified in floor/walls'}
+${extraRefs.length ? 'Extra reference images are CATALOG TEXTURES: match the floor plane to the floor texture photo and the walls to the wall texture photo. Do not apply the same catalog image to both.' : ''}
+Survey:
+${String(analysis).slice(0, 1800)}
+Same proportions and vanishing points. No text, no watermark, no people.`;
 
     const item = await generateInteriorImage(prompt, refs);
     const savedPhoto = await saveGeneratedImage(item, 'render');
@@ -625,9 +1011,30 @@ router.post('/configure-environment', optionalMultipart, async (req, res, next) 
     const floorFile = req.files?.floorTexture?.[0];
     const wallFile = req.files?.wallTexture?.[0];
     const planFile = req.files?.planImage?.[0];
+    const modelFileCfg = req.files?.model?.[0];
+    const mtlFileCfg = req.files?.mtl?.[0];
     if (floorFile) uploaded.push(floorFile.path);
     if (wallFile) uploaded.push(wallFile.path);
     if (planFile) uploaded.push(planFile.path);
+    if (modelFileCfg) uploaded.push(modelFileCfg.path);
+    if (mtlFileCfg) uploaded.push(mtlFileCfg.path);
+    if (modelFileCfg && path.extname(modelFileCfg.originalname || '').toLowerCase() === '.obj') {
+      const mtlTxt = mtlFileCfg ? await fs.readFile(mtlFileCfg.path, 'utf8') : '';
+      const parsed = parseObjSummary(await fs.readFile(modelFileCfg.path, 'utf8'), mtlTxt);
+      body.modelLayout = JSON.stringify({
+        suggestedRoom: parsed.suggestedRoom,
+        note: parsed.note,
+        fixtures: parsed.fixtures,
+        objects: (parsed.objects || []).slice(0, 25),
+        proportions: parsed.proportions
+      });
+      if ((!body.roomType || body.roomType === 'salotto') && parsed.suggestedRoom && parsed.suggestedRoom !== 'altro') {
+        // keep user's explicit room; only fill if they left default AND mesh is confident
+      }
+      if (parsed.suggestedRoom === 'bagno' && !fixtures.length) {
+        fixtures.push(...(parsed.fixtures.length ? parsed.fixtures : ['sanitari contemporanei', 'lavabo', 'doccia o vasca']));
+      }
+    }
 
     const stylesText = styles.join(', ') || 'moderno';
     const colorsText = colors.join(', ') || 'neutri caldi';
@@ -636,17 +1043,21 @@ router.post('/configure-environment', optionalMultipart, async (req, res, next) 
 
     for (const key of viewKeys.slice(0, 4)) {
       const camera = VIEW_PROMPTS[key] || VIEW_PROMPTS.frontale;
+      const isBath = roomType === 'bagno' || roomType === 'bathroom';
       const prompt = `${scene}.
 Style: ${stylesText}
-Colors (interpret names like "grigio topo", "ottanio", RAL or hex if present): ${colorsText}
-${outdoor ? `Outdoor flooring / decking: ${floorFinish}` : `Floor: ${floorFinish}`}${floorFile ? ' — match the catalog floor/deck texture from the reference photo' : ''}
-${outdoor ? `Vertical surfaces, walls or fences: ${wallFinish}` : `Walls: ${wallFinish}`}${wallFile ? ' — match the catalog wall texture from the reference photo' : ''}
-${fixturesText ? `Elements to include: ${fixturesText}` : ''}
+Palette (names, RAL or hex): ${colorsText}
+FLOOR ONLY — do not put this finish on walls: ${floorFinish}${floorFile ? ' — match the catalog floor photo' : ''}
+WALLS ONLY — do not put this finish on the floor: ${wallFinish}${wallFile ? ' — match the catalog wall photo' : ''}
+CRITICAL MATERIAL SEPARATION: floor and walls must look different. Never use the same texture/colour on both.
+${isBath ? 'THIS IS A BATHROOM: toilet/bidet, basin, shower or tub, bathroom taps. FORBIDDEN: bed, pillows, bedroom furniture.' : ''}
+${fixturesText ? `Elements that MUST appear: ${fixturesText}` : ''}
 ${brief ? `User layout brief (follow closely): ${brief}` : ''}
-${sqm ? `Exact area: ${sqm} square meters. Respect realistic proportions.` : `Size class: ${size}`}
-${planFile ? 'A floor-plan image is provided as reference: respect room shape, openings and circulation as much as possible.' : ''}
+${sqm ? `Exact area: ${sqm} square meters.` : `Size class: ${size}`}
+${planFile ? 'A floor-plan image is provided: respect room shape and openings.' : ''}
+${body.modelLayout ? `SketchUp/OBJ geometry (respect positions, ignore OBJ colours): ${String(body.modelLayout).slice(0, 900)}` : ''}
 Lighting: ${lighting}
-Budget level: ${budget}
+Budget: ${budget}
 Camera: ${camera}
 Same furniture layout and materials across views. No text, no watermark, no logos.`;
 
