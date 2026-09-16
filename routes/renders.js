@@ -789,6 +789,133 @@ function surveyPng(mesh) {
   return encodePng(W, H, rgb);
 }
 
+function surveyView3d(mesh) {
+  const W = 1280;
+  const H = 720;
+  const rgb = Buffer.alloc(W * H * 3, 210);
+  const zbuf = new Float32Array(W * H);
+  zbuf.fill(1e9);
+  const set = (x, y, z, r, g, b) => {
+    if (x < 0 || y < 0 || x >= W || y >= H) return;
+    const i = y * W + x;
+    if (z >= zbuf[i]) return;
+    zbuf[i] = z;
+    const p = i * 3;
+    rgb[p] = r; rgb[p + 1] = g; rgb[p + 2] = b;
+  };
+  const fillTri = (a, b, c, r, g, bl) => {
+    const minx = Math.max(0, Math.floor(Math.min(a[0], b[0], c[0])));
+    const maxx = Math.min(W - 1, Math.ceil(Math.max(a[0], b[0], c[0])));
+    const miny = Math.max(0, Math.floor(Math.min(a[1], b[1], c[1])));
+    const maxy = Math.min(H - 1, Math.ceil(Math.max(a[1], b[1], c[1])));
+    const area = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+    if (Math.abs(area) < 1) return;
+    for (let y = miny; y <= maxy; y++) {
+      for (let x = minx; x <= maxx; x++) {
+        const w0 = (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0]);
+        const w1 = (c[0] - b[0]) * (y - b[1]) - (c[1] - b[1]) * (x - b[0]);
+        const w2 = (a[0] - c[0]) * (y - c[1]) - (a[1] - c[1]) * (x - c[0]);
+        if (area > 0 ? (w0 >= 0 && w1 >= 0 && w2 >= 0) : (w0 <= 0 && w1 <= 0 && w2 <= 0)) {
+          const u = w1 / area;
+          const v = w2 / area;
+          const ww = 1 - u - v;
+          const z = ww * a[2] + u * b[2] + v * c[2];
+          set(x, y, z, r, g, bl);
+        }
+      }
+    }
+  };
+  const quad = (p, col) => {
+    fillTri(p[0], p[1], p[2], col[0], col[1], col[2]);
+    fillTri(p[0], p[2], p[3], col[0], col[1], col[2]);
+  };
+
+  const bw = mesh.bbox?.width || 300;
+  const bd = mesh.bbox?.depth || 300;
+  const bh = mesh.bbox?.height || 270;
+  const cam = { x: bw * 0.5, y: Math.min(150, bh * 0.52), z: bd + 170 };
+  const f = 720;
+  const project = (x, y, z) => {
+    const dz = Math.max(12, cam.z - z);
+    return [W * 0.5 + f * (x - cam.x) / dz, H * 0.62 - f * (y - cam.y) / dz, dz];
+  };
+  const box = (x0, y0, z0, x1, y1, z1, col) => {
+    const P = (x, y, z) => project(x, y, z);
+    quad([P(x0, y0, z1), P(x1, y0, z1), P(x1, y1, z1), P(x0, y1, z1)], col);
+    quad([P(x0, y0, z0), P(x0, y1, z0), P(x1, y1, z0), P(x1, y0, z0)], [col[0] * 0.75, col[1] * 0.75, col[2] * 0.75].map(Math.round));
+    quad([P(x0, y0, z0), P(x0, y0, z1), P(x0, y1, z1), P(x0, y1, z0)], [col[0] * 0.85, col[1] * 0.85, col[2] * 0.85].map(Math.round));
+    quad([P(x1, y0, z0), P(x1, y1, z0), P(x1, y1, z1), P(x1, y0, z1)], [col[0] * 0.6, col[1] * 0.6, col[2] * 0.6].map(Math.round));
+    quad([P(x0, y1, z0), P(x0, y1, z1), P(x1, y1, z1), P(x1, y1, z0)], [Math.min(255, col[0] + 25), Math.min(255, col[1] + 25), Math.min(255, col[2] + 25)]);
+  };
+
+  // sky through window
+  for (let i = 0; i < rgb.length; i += 3) { rgb[i] = 186; rgb[i + 1] = 210; rgb[i + 2] = 230; }
+
+  box(0, 0, 0, bw, 2, bd, [90, 90, 95]);
+  box(0, bh - 2, 0, bw, bh, bd, [235, 232, 226]);
+  box(0, 0, 0, 4, bh, bd, [220, 216, 208]);
+  box(bw - 4, 0, 0, bw, bh, bd, [210, 206, 198]);
+  box(0, 0, 0, bw, bh, 4, [225, 221, 214]);
+
+  const lab = (a) => {
+    const n = normName(a.name + ' ' + (a.type || '') + ' ' + (a.role || ''));
+    if (/(finestra|window)/.test(n)) return 'FINESTRA';
+    if (/(porta|door)/.test(n)) return 'PORTA';
+    if (/(doccia|shower)/.test(n)) return 'DOCCIA';
+    if (/(lavabo|sink)/.test(n)) return 'LAVABO';
+    if (/bidet/.test(n)) return 'BIDET';
+    if (/(wc|cassetta|sospesi|toilet)/.test(n)) return 'WC';
+    return '';
+  };
+  const items = [...(mesh.openings || []), ...(mesh.placed || [])];
+  const by = {};
+  for (const a of items) {
+    const k = lab(a);
+    if (!k) continue;
+    if (!by[k]) by[k] = { ...a, label: k };
+    else {
+      const x0 = Math.min(by[k].fromX, a.fromX);
+      const z0 = Math.min(by[k].fromZ, a.fromZ || 0);
+      const x1 = Math.max(by[k].fromX + (by[k].sizeX || 10), a.fromX + (a.sizeX || a.width || 10));
+      const z1 = Math.max(by[k].fromZ + (by[k].sizeZ || 10), (a.fromZ || 0) + (a.sizeZ || 10));
+      by[k].fromX = x0; by[k].fromZ = z0; by[k].sizeX = x1 - x0; by[k].sizeZ = z1 - z0;
+    }
+  }
+  const col = {
+    FINESTRA: [0, 170, 210],
+    PORTA: [140, 90, 50],
+    DOCCIA: [40, 90, 190],
+    LAVABO: [230, 200, 150],
+    WC: [250, 250, 250],
+    BIDET: [210, 210, 230]
+  };
+  if (by.FINESTRA) {
+    const w = by.FINESTRA;
+    box(w.fromX, w.sill || 100, 0, w.fromX + (w.width || w.sizeX), (w.sill || 100) + (w.height || 140), 6, col.FINESTRA);
+  }
+  if (by.DOCCIA) {
+    const d = by.DOCCIA;
+    box(d.fromX, 0, d.fromZ, d.fromX + d.sizeX, Math.max(200, d.sizeY || 120), d.fromZ + Math.max(d.sizeZ, 40), col.DOCCIA);
+  }
+  if (by.LAVABO) {
+    const l = by.LAVABO;
+    box(l.fromX, 80, l.fromZ, l.fromX + Math.max(l.sizeX, 40), 100, l.fromZ + Math.max(l.sizeZ, 45), col.LAVABO);
+  }
+  if (by.WC) {
+    const w = by.WC;
+    box(w.fromX, 0, w.fromZ, w.fromX + Math.max(w.sizeX, 35), 42, w.fromZ + Math.max(w.sizeZ, 50), col.WC);
+  }
+  if (by.BIDET) {
+    const w = by.BIDET;
+    box(w.fromX, 0, w.fromZ, w.fromX + Math.max(w.sizeX, 30), 40, w.fromZ + Math.max(w.sizeZ, 45), col.BIDET);
+  }
+  if (by.PORTA) {
+    const p = by.PORTA;
+    box(p.fromX, 0, Math.max(p.fromZ, bd - 14), p.fromX + Math.max(p.sizeX, p.width || 80), 210, bd, col.PORTA);
+  }
+  return encodePng(W, H, rgb);
+}
+
 function parseMtl(text) {
   const mats = {};
   let cur = null;
@@ -1263,11 +1390,15 @@ Scrivi in italiano: tipo stanza, quale parete ha la finestra, quale ha la porta,
     }
 
     let planImage = null;
+    let plan2dName = null;
     if (mesh && (mesh.placed?.length || mesh.openings?.length)) {
       try {
         await fs.mkdir(UPLOADS_DIR, { recursive: true });
-        planImage = `plan-${Date.now()}.png`;
-        await fs.writeFile(path.join(UPLOADS_DIR, planImage), surveyPng(mesh));
+        const stamp = Date.now();
+        plan2dName = `plan-${stamp}.png`;
+        planImage = `view3d-${stamp}.png`;
+        await fs.writeFile(path.join(UPLOADS_DIR, plan2dName), surveyPng(mesh));
+        await fs.writeFile(path.join(UPLOADS_DIR, planImage), surveyView3d(mesh));
         mesh.planImage = planImage;
       } catch (err) {
         console.error('plan png', err.message);
@@ -1295,7 +1426,8 @@ Scrivi in italiano: tipo stanza, quale parete ha la finestra, quale ha la porta,
         suggested,
         textureRefs,
         planImage,
-        planUrl: planImage ? `/api/renders/media/${planImage}` : null,
+        planUrl: plan2dName ? `/api/renders/media/${plan2dName}` : null,
+        viewUrl: planImage ? `/api/renders/media/${planImage}` : null,
         sourceImage: imageFile ? imageFile.filename : null,
         sourceModel: modelFile ? modelFile.filename : null
       }
@@ -1345,22 +1477,25 @@ router.post('/generate-render', async (req, res, next) => {
     const fx = Array.isArray(fixtures) ? fixtures.filter(Boolean).join(', ') : String(fixtures || '');
     const isBath = /bagno|bath/i.test(room + ' ' + String(analysis).slice(0, 400));
     const lock = String(layoutLock || '').trim() || (String(analysis).match(/PIANTA VINCOLANTE[\s\S]{0,2500}/) || [''])[0];
-    const prompt = `Photorealistic architectural photograph matching the labeled survey images EXACTLY.
-The first reference has TWO diagrams:
-1) PLAN: top of the page = window wall, bottom = entrance. Labels: FINESTRA, DOCCIA, LAVABO, WC, BIDET, PORTA, CAMERA.
-2) CAMERA VIEW: what the photo must look like. LEFT foreground = DOCCIA (blue). LEFT mid-distance = two LAVABO. CENTER far wall = FINESTRA shifted to the LEFT, not centered. RIGHT far = WC and BIDET. RIGHT foreground = PORTA (brown wood door).
-WRONG layouts to never produce: shower next to the window; window in the middle of the back wall; one long trough sink; door missing.
+    const prompt = `Turn this COLORED 3D MASSING into a photorealistic Italian bathroom photo. Keep every block where it is.
+The first image is a camera view from inside the room, looking at the window wall:
+- BLUE box = shower, ONLY in the near-left corner on the ENTRANCE wall. It must NOT run along the left wall to the window.
+- BROWN box = door, on the SAME entrance wall as the shower, near-right. Not a door on the side wall.
+- CYAN = window on the FAR wall, shifted LEFT, not centered.
+- BEIGE = two washbasins on the left wall, mid-distance, separate from the shower.
+- WHITE = wall-hung WC on the right wall near the window. LILAC = bidet in front of the WC.
+Do not rearrange. Do not invent a side door. Do not stretch the shower to the window. Change only materials, tiles, lighting.
 ${lock ? `LOCKED SURVEY:\n${lock}\n` : ''}
-ROOM TYPE: ${room || 'see analysis'}${isBath ? '. Bathroom. Never a bedroom.' : ''}
+ROOM: ${room || 'bathroom'}${isBath ? '. Bathroom, never a bedroom.' : ''}
 FLOOR: ${floor || '(distinct from walls)'}
 WALLS: ${wall || '(distinct from floor)'}
-${fx ? 'Fixtures stay put: ' + fx : ''}
-User directives (finish/mood only): ${modelBrief || 'none'}
+${fx ? 'Fixtures: ' + fx : ''}
+User finish notes: ${modelBrief || 'none'}
 Style: ${style || 'contemporary Italian interior'}
 Lighting: ${lighting || 'mixed natural and artificial'}
 Palette: ${colors || 'as specified'}
-${extraRefs.length ? 'Further images are catalog textures: floor on floor only, wall on walls only.' : ''}
-Camera stands at the entrance/shower wall looking at the window. Photoreal materials, no text, no watermark, no people.`;
+${extraRefs.length ? 'Extra images are catalog textures only.' : ''}
+Photoreal, no text, no watermark, no people.`;
 
     const item = await generateInteriorImage(prompt, refs);
     const savedPhoto = await saveGeneratedImage(item, 'render');
@@ -1526,8 +1661,8 @@ router.post('/configure-environment', optionalMultipart, async (req, res, next) 
       }
       body.layoutLock = parsed.layoutLock;
       try {
-        const planPath = path.join(UPLOADS_DIR, `plan-${Date.now()}.png`);
-        await fs.writeFile(planPath, surveyPng(parsed));
+        const planPath = path.join(UPLOADS_DIR, `view3d-${Date.now()}.png`);
+        await fs.writeFile(planPath, surveyView3d(parsed));
         uploaded.unshift(planPath);
       } catch (err) {
         console.error('plan png cfg', err.message);
