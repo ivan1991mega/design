@@ -481,6 +481,12 @@
         </div>
         <div id="renderResult" style="display:none; margin-top:16px;">
           <img id="renderImg" class="preview">
+          <div class="section" style="margin-top:14px;">
+            <label>Cosa non va — una correzione alla volta, sul render già fatto</label>
+            <textarea id="correctNotes" placeholder="es. centra il lavabo sul mobile&#10;es. in basso è un’apertura nel muro, non una porta&#10;es. metti il rivestimento anche in zona lavabo"></textarea>
+            <p class="hint">Non si rianalizza lo SKP: modifica solo questa foto. Meglio una frase precisa che un elenco lungo.</p>
+          </div>
+          <button type="button" onclick="correggiRender()" style="width:100%;">Correggi questo render</button>
           <button onclick="downloadRender(window.lastPhotoRenderId, 'render-foto-HQ.png')" style="margin-top:12px;">Download HQ</button>
           <button class="ghost" onclick="resetRender()" style="margin-top:12px;">Ricomincia</button>
         </div>
@@ -931,6 +937,43 @@ async function generaRender() {
     loadStats();
     loadArchive();
   } else alert(data.error || 'Errore render');
+}
+
+async function correggiRender() {
+  const notes = (document.getElementById('correctNotes')?.value || '').trim();
+  if (!notes) {
+    alert('Scrivi una correzione (es. centra il lavabo).');
+    return;
+  }
+  if (!window.lastPhotoRenderId) {
+    alert('Prima genera un render.');
+    return;
+  }
+  const btn = document.querySelector('#renderResult button[onclick="correggiRender()"]');
+  if (btn) { btn.disabled = true; btn.textContent = 'Correggo…'; }
+  try {
+    const res = await fetch('/api/renders/correct-render', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        renderId: window.lastPhotoRenderId,
+        notes,
+        clientId: currentClient || undefined
+      })
+    });
+    const data = await res.json();
+    if (data.success) {
+      document.getElementById('renderImg').src = data.data.renderUrl + '?t=' + Date.now();
+      window.lastPhotoRenderId = data.data.renderId;
+      document.getElementById('correctNotes').value = '';
+      loadStats();
+      loadArchive();
+    } else alert(data.error || 'Errore correzione');
+  } catch (err) {
+    alert(err.message || 'Errore rete');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Correggi questo render'; }
+  }
 }
 
 function resetRender() {
