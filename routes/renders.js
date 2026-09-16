@@ -1627,6 +1627,9 @@ router.post('/generate-render', async (req, res, next) => {
 Use the SketchUp components, do not replace them with generic catalog sanitary ware.
 KEEP the shower SEAT/bench inside the shower if the model has one (seduta/panca).
 Do NOT invent a black-framed glass shower screen in the middle of the stall. Glass only where the SketchUp model already has glass.
+Wall gaps / passages in the SketchUp are OPENINGS in the wall, not hinged doors with a leaf. Do not put a door where there is only a void.
+Align washbasins on the vanity: same count and centered as in SketchUp (do not offset a single sink).
+Keep wall cladding/tiles in the vanity room too, as in the model — not painted plaster if the SKP is tiled.
 Do not add extra partitions. Do not remove the dividing wall between shower and vanity.
 ${lock ? `SKETCHUP COMPONENTS:\n${lock}\n` : ''}
 ${fx ? 'Named objects: ' + fx : ''}
@@ -1664,6 +1667,78 @@ Style: ${style || 'contemporary Italian interior'}. Photoreal, no text, no peopl
       data: {
         renderId: render._id,
         renderUrl: savedPhoto.imageUrl,
+        title: render.title,
+        createdAt: render.createdAt
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+async function localRenderPath(render) {
+  if (!render?.imageFile) return null;
+  const disk = path.join(UPLOADS_DIR, path.basename(render.imageFile));
+  try {
+    await fs.access(disk);
+    return disk;
+  } catch {}
+  try {
+    const buf = await readGridByName(render.imageFile);
+    if (!buf) return null;
+    await fs.mkdir(UPLOADS_DIR, { recursive: true });
+    await fs.writeFile(disk, buf);
+    return disk;
+  } catch {
+    return null;
+  }
+}
+
+router.post('/correct-render', async (req, res, next) => {
+  try {
+    const notes = String(req.body?.notes || '').trim();
+    const renderId = req.body?.renderId;
+    if (!notes) {
+      return res.status(400).json({ success: false, error: 'Scrivi cosa correggere (una cosa alla volta).' });
+    }
+    if (!renderId) {
+      return res.status(400).json({ success: false, error: 'Manca il render da correggere' });
+    }
+    const prev = await Render.findOne({ _id: renderId, adminId: req.adminId });
+    if (!prev) return res.status(404).json({ success: false, error: 'Render non trovato' });
+    const src = await localRenderPath(prev);
+    if (!src) return res.status(404).json({ success: false, error: 'File del render non disponibile' });
+
+    const prompt = `This is the CURRENT finished render. Apply ONLY the user's corrections. Keep camera, room layout, and everything not mentioned.
+User corrections (Italian): ${notes}
+Typical reminders: a wall opening is not a door leaf; keep basins centered as already composed unless told otherwise; add cladding only where asked.
+Do not redesign. Photoreal, no text, no people, no watermark.`;
+
+    const item = await generateInteriorImage(prompt, [src]);
+    const saved = await saveGeneratedImage(item, 'fix');
+    const client = prev.clientId
+      ? await Client.findOne({ _id: prev.clientId, adminId: req.adminId })
+      : await ensureClient(req.adminId, req.body?.clientId);
+
+    const render = await Render.create({
+      clientId: client._id,
+      adminId: req.adminId,
+      title: `Correzione — ${notes.slice(0, 48)}`,
+      description: notes,
+      imageUrl: saved.imageUrl,
+      imageFile: saved.imageName,
+      gridFileId: saved.gridFileId,
+      style: prev.style,
+      lighting: prev.lighting,
+      colors: prev.colors,
+      renderType: 'dalle'
+    });
+
+    res.json({
+      success: true,
+      data: {
+        renderId: render._id,
+        renderUrl: saved.imageUrl,
         title: render.title,
         createdAt: render.createdAt
       }
