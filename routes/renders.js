@@ -1431,14 +1431,27 @@ router.post('/analyze-image', analyzeUpload, async (req, res, next) => {
 
     const modelBrief = String(req.body?.modelBrief || '').trim();
     let vision = '';
-    if (imageFile) {
-      const imageBuffer = await fs.readFile(imageFile.path);
+    const visionFile = imageFile?.path || (skpSourceName ? path.join(UPLOADS_DIR, skpSourceName) : null);
+    if (visionFile) {
+      const imageBuffer = await fs.readFile(visionFile);
       const base64Image = imageBuffer.toString('base64');
-      const mimeType = imageFile.mimetype || 'image/jpeg';
+      const mimeType = imageFile?.mimetype || 'image/png';
       const openai = getOpenAI();
+      const skpHint = mesh?.format === 'skp'
+        ? `\nQuesta è la VISTA SketchUp del file .skp. Fai un INVENTARIO vincolante, oggetto per oggetto.
+Per ogni elemento visibile: nome, posizione (parete ingresso / sinistra / destra / fondo / centro), quantità.
+Distingui con cura:
+- specchio tondo/ovale vs lavabo (uno specchio NON è un secondo lavandino)
+- vetro doccia/vasca: c'è? copre tutta la vasca o solo metà? Se c'è, va TENUTO
+- vasca: ci sono bocchette idromassaggio? se sì, tenerle
+- termoarredo / calorifero
+- WC, bidet, cassetta, porta o solo apertura nel muro
+VIETATO elencare cose non visibili: niente portarotolo, flaconi, piante, speaker se non si vedono.
+Conta i lavabi. Conta i sanitari. Questa lista sarà l'unica verità per il render.\n`
+        : '';
       const response = await openai.chat.completions.create({
         model: 'gpt-4o',
-        max_tokens: 1600,
+        max_tokens: 2200,
         messages: [
           {
             role: 'user',
@@ -1448,15 +1461,16 @@ router.post('/analyze-image', analyzeUpload, async (req, res, next) => {
                 type: 'text',
                 text: `Sei un architetto. Analizza QUESTO spazio come base vincolante per un render fotorealistico.
 Non inventare una planimetria diversa.
+${skpHint}
 Elenca in italiano:
 1. Tipo di ambiente e destinazione
-2. Geometria: pianta percepita, rapporti LxPxH, aperture (porte/finestre) e dove stanno
-3. Layout fisso: muri, pilastri, scale, soffitto, eventuali volumi che NON si devono spostare
-4. Arredi visibili e posizione relativa (destra/sinistra/centro/fondo)
-5. Materiali e finiture già presenti da rispettare o sostituire
-6. Luce: direzione, temperatura, ombre
-7. Cosa è un vincolo strutturale e cosa è modificabile
-8. Istruzioni precise per un motore di render: stessa inquadratura, stesse proporzioni, stesso punto di fuga
+2. INVENTARIO oggetti visibili (elenco puntato, posizione, quantità). Niente extra.
+3. Geometria: pianta, aperture (porte/finestre/vani) e dove stanno — un vano non è una porta
+4. Layout fisso: muri, divisori, nicchie
+5. Materiali già presenti
+6. Vetri, specchi, vasca/doccia, idromassaggio: sì/no e dove
+7. Cosa è vincolo e cosa è modificabile (solo finiture)
+8. Istruzioni per il render: stessa inquadratura, stessi oggetti, niente accessori inventati
 ${mesh ? `DATI MESH (vincolanti). Stanza rilevata: ${mesh.suggestedRoom}. ${mesh.note || ''}
 PIANTA BLOCCATA:
 ${mesh.layoutLock || ''}
@@ -1500,7 +1514,17 @@ Scrivi in italiano: tipo stanza, quale parete ha la finestra, quale ha la porta,
       mesh?.layoutLock ? `PIANTA E APERTURE BLOCCATE\n${mesh.layoutLock}\n` : '',
       modelBrief ? `DIRETTIVE UTENTE SUL 3D\n${modelBrief}\n` : '',
       vision,
-      mesh ? `\n\nDATI MODELLO 3D\n${JSON.stringify({ ...mesh, objects: (mesh.objects || []).slice(0, 20) }, null, 2)}` : ''
+      mesh ? `\n\nDATI MODELLO 3D\n${JSON.stringify({
+        format: mesh.format,
+        suggestedRoom: mesh.suggestedRoom,
+        fixtures: mesh.fixtures,
+        objects: (mesh.objects || []).slice(0, 25),
+        materials: mesh.materials,
+        layoutLock: mesh.layoutLock,
+        note: mesh.note,
+        hasSeat: mesh.hasSeat,
+        hasGlass: mesh.hasGlass
+      }, null, 2)}` : ''
     ].join('').trim();
 
     let textureRefs = [];
@@ -1623,14 +1647,17 @@ router.post('/generate-render', async (req, res, next) => {
     const lock = String(layoutLock || '').trim() || (String(analysis).match(/PIANTA VINCOLANTE[\s\S]{0,2500}/) || [''])[0];
     const fromPhoto = Boolean(sourceImage);
     const prompt = fromPhoto
-      ? `Photorealistic restyle of the FIRST image: it is the SketchUp model of this exact room. Keep the same axonometric camera, the dividing wall, every fixture as modeled.
-Use the SketchUp components, do not replace them with generic catalog sanitary ware.
-KEEP the shower SEAT/bench inside the shower if the model has one (seduta/panca).
-Do NOT invent a black-framed glass shower screen in the middle of the stall. Glass only where the SketchUp model already has glass.
-Wall gaps / passages in the SketchUp are OPENINGS in the wall, not hinged doors with a leaf. Do not put a door where there is only a void.
-Align washbasins on the vanity: same count and centered as in SketchUp (do not offset a single sink).
-Keep wall cladding/tiles in the vanity room too, as in the model — not painted plaster if the SKP is tiled.
-Do not add extra partitions. Do not remove the dividing wall between shower and vanity.
+      ? `Photorealistic restyle of the FIRST image only: it is the SketchUp model of this exact room.
+Keep the same camera, walls, and the same number and place of every fixture.
+Change materials, lighting and finishes. Do not redesign the layout.
+READ THE MODEL CAREFULLY:
+- A round or oval disc on the wall or above the vanity is a MIRROR, not a second sink. Do not add an extra basin.
+- One washbasin if SketchUp shows one. Do not invent a vessel bowl next to it.
+- If the tub has a half glass screen, KEEP that half glass — do not remove it and do not close it into a full box.
+- If the tub has hydromassage jets / bocchette, KEEP them.
+- Do not add toilet-paper holders, bottles, trays, plants, speakers or other accessories that are not in SketchUp.
+- Wall openings stay openings (no extra door leaf).
+- Do not add glass where the model has none; do not delete glass that is already in the model.
 ${lock ? `SKETCHUP COMPONENTS:\n${lock}\n` : ''}
 ${fx ? 'Named objects: ' + fx : ''}
 FLOOR: ${floor || '(from model / user)'}
