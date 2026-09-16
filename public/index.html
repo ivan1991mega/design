@@ -1,4 +1,5 @@
 
+
 <!DOCTYPE html>
 <html lang="it">
 <head>
@@ -82,6 +83,17 @@
   .section { margin-bottom:18px; }
   .room-extra { display:none; }
   img.preview { width:100%; border-radius:14px; display:block; }
+  .arch-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:16px; }
+  .arch-img { cursor:zoom-in; max-height:280px; object-fit:cover; }
+  #lightbox {
+    display:none; position:fixed; inset:0; z-index:80;
+    background:rgba(8,10,14,.92); padding:20px 16px 16px;
+    flex-direction:column; align-items:center; justify-content:center; gap:12px;
+  }
+  #lightbox.show { display:flex; }
+  #lightboxImg { max-width:min(1200px,100%); max-height:calc(100vh - 100px); object-fit:contain; border-radius:12px; }
+  #lightboxBar { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; align-items:center; }
+  #lightboxCap { color:var(--muted); font-size:13px; text-align:center; }
 </style>
 </head>
 <body>
@@ -384,6 +396,12 @@
         <div id="configResult" style="display:none; margin-top:18px;">
           <img id="configImg" class="preview" alt="render">
           <div id="configViewBtns" class="chips" style="margin:12px 0;"></div>
+          <h2 style="margin:16px 0 8px;">Correggi render</h2>
+          <div class="section">
+            <label>Cosa non va (una correzione alla volta)</label>
+            <textarea id="correctNotesConfig" placeholder="es. centra il lavabo · togli la porta, è un’apertura · rivestimento anche in zona lavabo"></textarea>
+          </div>
+          <button type="button" id="fixConfigBtn" onclick="correggiRender('correctNotesConfig')" style="width:100%;">Correggi questo render</button>
           <button type="button" id="downloadCurrentBtn" onclick="downloadCurrentView()">Download HQ</button>
           <button type="button" class="ghost" onclick="playViews()">Short viste</button>
           <button type="button" class="ghost" onclick="resetConfig()">Nuova configurazione</button>
@@ -394,14 +412,14 @@
     <div id="archive" class="tab-content">
       <div class="card">
         <h2 style="margin-bottom:8px;">Archivio render</h2>
-        <p class="hint" style="margin-bottom:16px;">I PNG restano su MongoDB, anche dopo un deploy Railway. Spunta più render per scaricarli in zip o cancellarli.</p>
+        <p class="hint" style="margin-bottom:16px;">Clicca la foto per vederla grande. Spunta più render per scaricarli o cancellarli.</p>
         <div class="chips" style="margin-bottom:14px;">
           <button class="ghost" type="button" onclick="loadArchive()">Aggiorna</button>
           <button class="ghost" type="button" onclick="toggleSelectAll()">Seleziona tutti</button>
           <button type="button" onclick="downloadSelected()">Scarica selezionati</button>
           <button class="danger" type="button" onclick="deleteSelected()">Elimina selezionati</button>
         </div>
-        <div id="archiveList" class="grid"></div>
+        <div id="archiveList" class="arch-grid"></div>
       </div>
     </div>
 
@@ -477,21 +495,35 @@
           </div>
           <div class="section"><label>Colori (nomi liberi)</label><input id="renderColors" placeholder="ottanio, grigio topo"></div>
           <button type="button" onclick="generaRender()" style="width:100%;">Genera render da rilievo</button>
+          <p class="hint">Dopo il render compare sotto la foto il tasto <b>Correggi questo render</b>.</p>
           <button type="button" class="ghost" onclick="applyAnalysisToConfig()" style="width:100%;margin-top:8px;">Porta stanza e finiture nel configuratore</button>
         </div>
         <div id="renderResult" style="display:none; margin-top:16px;">
           <img id="renderImg" class="preview">
-          <div class="section" style="margin-top:14px;">
-            <label>Cosa non va — una correzione alla volta, sul render già fatto</label>
+          <h2 style="margin:16px 0 8px;">Correggi render</h2>
+          <div class="section">
+            <label>Cosa non va (una correzione alla volta)</label>
             <textarea id="correctNotes" placeholder="es. centra il lavabo sul mobile&#10;es. in basso è un’apertura nel muro, non una porta&#10;es. metti il rivestimento anche in zona lavabo"></textarea>
-            <p class="hint">Non si rianalizza lo SKP: modifica solo questa foto. Meglio una frase precisa che un elenco lungo.</p>
+            <p class="hint">Modifica solo questa foto. Una frase precisa.</p>
           </div>
-          <button type="button" onclick="correggiRender()" style="width:100%;">Correggi questo render</button>
+          <button type="button" id="fixRenderBtn" onclick="correggiRender()" style="width:100%;">Correggi questo render</button>
           <button onclick="downloadRender(window.lastPhotoRenderId, 'render-foto-HQ.png')" style="margin-top:12px;">Download HQ</button>
           <button class="ghost" onclick="resetRender()" style="margin-top:12px;">Ricomincia</button>
         </div>
       </div>
     </div>
+  </div>
+</div>
+
+<div id="lightbox" onclick="if(event.target===this) closeLightbox()">
+  <img id="lightboxImg" alt="render">
+  <div id="lightboxCap"></div>
+  <div id="lightboxBar">
+    <button class="ghost" type="button" onclick="lbStep(-1)">← Prec</button>
+    <button class="ghost" type="button" onclick="closeLightbox()">Chiudi</button>
+    <button type="button" onclick="lbStep(1)">Succ →</button>
+    <button class="ghost" type="button" id="lbFixBtn">Correggi</button>
+    <button class="ghost" type="button" id="lbDlBtn">Download HQ</button>
   </div>
 </div>
 
@@ -506,9 +538,36 @@ let currentSourceImage = null;
 let lastSuggested = null;
 let lastTextureRefs = [];
 let lastPlanImage = null;
+let archiveItems = [];
+let lbIndex = 0;
 let configViews = [];
 let viewTimer = null;
 let currentViewIndex = 0;
+
+function viewArchive(i) {
+  if (!archiveItems.length) return;
+  lbIndex = (i + archiveItems.length) % archiveItems.length;
+  const r = archiveItems[lbIndex];
+  const box = document.getElementById('lightbox');
+  const img = document.getElementById('lightboxImg');
+  const cap = document.getElementById('lightboxCap');
+  img.src = r.imageUrl;
+  const when = r.createdAt ? new Date(r.createdAt).toLocaleString('it-IT') : '';
+  const clientName = r.clientId && r.clientId.name ? r.clientId.name : 'senza cliente';
+  cap.textContent = (r.title || 'Render') + ' · ' + clientName + (when ? ' · ' + when : '');
+  document.getElementById('lbFixBtn').onclick = () => { closeLightbox(); openFixFromArchive(r._id, r.imageUrl); };
+  document.getElementById('lbDlBtn').onclick = () => downloadRender(r._id, 'render-HQ.png');
+  box.classList.add('show');
+}
+function lbStep(d) { viewArchive(lbIndex + d); }
+function closeLightbox() { document.getElementById('lightbox').classList.remove('show'); }
+document.addEventListener('keydown', (e) => {
+  const box = document.getElementById('lightbox');
+  if (!box || !box.classList.contains('show')) return;
+  if (e.key === 'Escape') closeLightbox();
+  if (e.key === 'ArrowLeft') lbStep(-1);
+  if (e.key === 'ArrowRight') lbStep(1);
+});
 
 function toggleRoomExtras() {
   const room = document.getElementById('roomType').value;
@@ -936,11 +995,13 @@ async function generaRender() {
     window.lastPhotoRenderId = data.data.renderId;
     loadStats();
     loadArchive();
+    document.getElementById('renderResult').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } else alert(data.error || 'Errore render');
 }
 
-async function correggiRender() {
-  const notes = (document.getElementById('correctNotes')?.value || '').trim();
+async function correggiRender(notesId) {
+  const notesEl = document.getElementById(notesId || 'correctNotes');
+  const notes = (notesEl?.value || '').trim();
   if (!notes) {
     alert('Scrivi una correzione (es. centra il lavabo).');
     return;
@@ -949,7 +1010,8 @@ async function correggiRender() {
     alert('Prima genera un render.');
     return;
   }
-  const btn = document.querySelector('#renderResult button[onclick="correggiRender()"]');
+  const btn = document.getElementById(notesId === 'correctNotesConfig' ? 'fixConfigBtn' : 'fixRenderBtn');
+  const old = btn ? btn.textContent : '';
   if (btn) { btn.disabled = true; btn.textContent = 'Correggo…'; }
   try {
     const res = await fetch('/api/renders/correct-render', {
@@ -963,16 +1025,24 @@ async function correggiRender() {
     });
     const data = await res.json();
     if (data.success) {
-      document.getElementById('renderImg').src = data.data.renderUrl + '?t=' + Date.now();
+      const url = data.data.renderUrl + '?t=' + Date.now();
+      const img = document.getElementById('renderImg');
+      if (img) img.src = url;
+      const cimg = document.getElementById('configImg');
+      if (cimg) cimg.src = url;
+      if (configViews[currentViewIndex]) {
+        configViews[currentViewIndex].renderUrl = data.data.renderUrl;
+        configViews[currentViewIndex].renderId = data.data.renderId;
+      }
       window.lastPhotoRenderId = data.data.renderId;
-      document.getElementById('correctNotes').value = '';
+      if (notesEl) notesEl.value = '';
       loadStats();
       loadArchive();
     } else alert(data.error || 'Errore correzione');
   } catch (err) {
     alert(err.message || 'Errore rete');
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'Correggi questo render'; }
+    if (btn) { btn.disabled = false; btn.textContent = old || 'Correggi questo render'; }
   }
 }
 
@@ -1137,7 +1207,9 @@ async function submitConfig(e) {
 function showView(i) {
   currentViewIndex = i;
   const v = configViews[i];
-  if (v) document.getElementById('configImg').src = v.renderUrl;
+  if (!v) return;
+  document.getElementById('configImg').src = v.renderUrl;
+  if (v.renderId) window.lastPhotoRenderId = v.renderId;
 }
 
 async function downloadRender(id, filename) {
@@ -1173,21 +1245,38 @@ async function loadArchive() {
   const data = await res.json();
   if (!data.success) { box.innerHTML = '<p class="hint">Archivio non disponibile</p>'; return; }
   if (!data.data.length) { box.innerHTML = '<p class="hint">Nessun render salvato ancora.</p>'; return; }
+  archiveItems = data.data;
   box.innerHTML = '';
-  data.data.forEach(r => {
+  data.data.forEach((r, i) => {
     const card = document.createElement('div');
     card.className = 'card';
     const when = r.createdAt ? new Date(r.createdAt).toLocaleString('it-IT') : '';
     const clientName = r.clientId && r.clientId.name ? r.clientId.name : 'senza cliente';
+    const title = (r.title || 'Render').replace(/[<>]/g, '');
     card.innerHTML = `
       <label class="chip" style="margin-bottom:8px;"><input type="checkbox" class="arch-check" value="${r._id}"> Seleziona</label>
-      <img src="${r.imageUrl}" class="preview" alt="" style="margin-bottom:10px;">
-      <h3>${r.title || 'Render'}</h3>
+      <img src="${r.imageUrl}" class="preview arch-img" alt="${title}" onclick="viewArchive(${i})">
+      <h3 style="margin:10px 0 4px;">${title}</h3>
       <p class="hint">${clientName} · ${r.room || ''} ${when}</p>
+      <button type="button" onclick="viewArchive(${i})">Vedi</button>
       <button type="button" data-id="${r._id}" onclick="downloadRender(this.dataset.id, 'render-HQ.png')">Download HQ</button>
+      <button type="button" data-id="${r._id}" data-url="${r.imageUrl}" onclick="openFixFromArchive(this.dataset.id, this.dataset.url)">Correggi</button>
       <button type="button" class="danger" data-id="${r._id}" onclick="deleteRender(this.dataset.id)">Elimina</button>`;
     box.appendChild(card);
   });
+}
+
+function openFixFromArchive(id, url) {
+  window.lastPhotoRenderId = id;
+  switchTab('viewer');
+  document.querySelectorAll('.wrap > .tabs > .tab-btn').forEach(b => {
+    b.classList.toggle('active', (b.getAttribute('onclick') || '').includes("'viewer'"));
+  });
+  const img = document.getElementById('renderImg');
+  if (img) img.src = url;
+  document.getElementById('renderResult').style.display = 'block';
+  document.getElementById('correctNotes')?.focus();
+  document.getElementById('renderResult').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 async function deleteRender(id) {
