@@ -242,7 +242,9 @@ function classifyPart(name) {
   if (/(soffitto|ceiling|controsoff)/.test(t)) return 'ceiling';
   if (/(muro|muratura|parete|wall|partition|tramezzo)/.test(t)) return 'wall';
   if (/(porta|door|finestra|window|infisso)/.test(t)) return 'opening';
-  if (/(toilet|vaso|bidet|doccia|shower|lavabo|vasca|sanitari|cassetta|sospesi|\bwc\b)/.test(t)) return 'bathroom-fixture';
+  if (/(toilet|vaso|bidet|doccia|shower|lavabo|vasca|sanitari|cassetta|sospesi|\bwc\b|seduta|panca|seat|flessa)/.test(t)) return 'bathroom-fixture';
+  if (/(vetro|glass|box.?doccia|cristallo)/.test(t)) return 'shower-glass';
+  if (/(tramezzo|divisori|muretto|partition)/.test(t)) return 'wall';
   if (/(letto|bed|comodino)/.test(t)) return 'bedroom-furniture';
   if (/(cucina|kitchen|forno|cappa|isola)/.test(t)) return 'kitchen-fixture';
   return 'object';
@@ -1081,29 +1083,44 @@ function skpStringNames(buf) {
 async function parseSkpBuffer(buf, doorHint) {
   if (!Buffer.isBuffer(buf) || buf.length < 64) return null;
   const pngs = extractPngsFromBuffer(buf);
-  pngs.sort((a, b) => b.buf.length - a.buf.length);
   let entries = {};
   const pk = buf.indexOf(Buffer.from([0x50, 0x4b, 0x03, 0x04]));
   if (pk >= 0) {
     try { entries = await unzipEntries(buf.slice(pk)); } catch (err) { console.error('skp zip', err.message); }
   }
-  let preview = pngs[0]?.buf || null;
+  let preview = null;
   const textures = [];
   for (const [name, data] of Object.entries(entries)) {
     const low = name.replace(/\\/g, '/').toLowerCase();
     if (low.includes('model_thumbnail') && data.length > 800) preview = data;
-    else if (low.includes('preview') && data.length > 800 && (!preview || data.length > preview.length)) preview = data;
     if (/\.(jpe?g|png|webp)$/.test(low) && data.length > 1200 && !/thumbnail|preview/i.test(low)) {
       textures.push({ name, buf: data });
     }
   }
-  const names = skpStringNames(buf)
-    .filter((n) => classifyPart(n) !== 'object' || scoreText(n).confidence > 0)
-    .slice(0, 80);
-  const blob = names.join('\n');
-  const scored = scoreText(blob + ' ' + (doorHint || ''));
-  const objects = names.slice(0, 40).map((name) => ({ name, role: classifyPart(name), faces: 0, materials: [] }));
-  const fixtures = [...new Set(objects.filter((o) => /sanitari|doccia|lavabo|wc|bidet|finestra|porta|cucina|divano|letto/.test(o.role + o.name.toLowerCase())).map((o) => o.name))].slice(0, 20);
+  if (!preview) {
+    const mid = pngs.filter((p) => p.buf.length >= 2500 && p.buf.length <= 900000).sort((a, b) => b.buf.length - a.buf.length);
+    preview = (mid[0] || pngs.sort((a, b) => b.buf.length - a.buf.length)[0])?.buf || null;
+  }
+  const keepName = (n) => {
+    const t = normName(n);
+    if (classifyPart(n) !== 'object') return true;
+    if (scoreText(n).confidence > 0) return true;
+    return /(seduta|panca|seat|vetro|glass|box|flessa|tramezzo|divisori|muretto|rubinet|miscelat|piatto|nicchia|mensola|specchio|mobile|lavabo|doccia|bidet|\bwc\b|porta|finestra)/.test(t);
+  };
+  const names = skpStringNames(buf).filter(keepName).slice(0, 100);
+  const blob = names.join('\n') + ' ' + (doorHint || '');
+  const scored = scoreText(blob);
+  const objects = names.slice(0, 50).map((name) => ({ name, role: classifyPart(name), faces: 0, materials: [] }));
+  const fixtures = [...new Set(objects.map((o) => o.name))].slice(0, 30);
+  const hasSeat = names.some((n) => /seduta|panca|seat|bench/i.test(n));
+  const hasGlass = names.some((n) => /vetro|glass|cristallo|box/i.test(n));
+  const layoutLock = [
+    'COMPONENTI SKETCHUP — usa questi oggetti, non sostituirli con catalogo generico:',
+    ...objects.slice(0, 25).map((o) => `- ${o.name} [${o.role}]`),
+    hasSeat ? 'In doccia c’è una SEDUTA/PANCA: tenerla. Non toglierla.' : '',
+    hasGlass ? 'Il VETRO doccia è quello del modello: non inventare un box a telaio nero in mezzo alla stanza.' : 'Non aggiungere un box doccia in vetro se non è nel modello.',
+    'Tieni il muro di divisione doccia/lavabi. Stessa inquadratura assonometrica del file.'
+  ].filter(Boolean).join('\n');
   return {
     format: 'skp',
     suggestedRoom: scored.best || 'altro',
@@ -1112,10 +1129,13 @@ async function parseSkpBuffer(buf, doorHint) {
     objects,
     fixtures,
     materials: textures.map((t) => t.name).slice(0, 20),
-    note: 'File SketchUp (.skp) letto direttamente: vista salvata nel file + nomi componenti. Il render parte da quella inquadratura, non da un OBJ esportato.',
+    layoutLock,
+    note: 'File SketchUp (.skp): vista + componenti nativi. Il render deve usare questi oggetti (seduta, vetro, sanitari), non un bagno da catalogo.',
     preview,
     textures: textures.slice(0, 8),
-    pngCount: pngs.length
+    pngCount: pngs.length,
+    hasSeat,
+    hasGlass
   };
 }
 
@@ -1603,15 +1623,19 @@ router.post('/generate-render', async (req, res, next) => {
     const lock = String(layoutLock || '').trim() || (String(analysis).match(/PIANTA VINCOLANTE[\s\S]{0,2500}/) || [''])[0];
     const fromPhoto = Boolean(sourceImage);
     const prompt = fromPhoto
-      ? `Photorealistic restyle of the FIRST image, which is a SketchUp (or photo) camera of the EXISTING room. Keep the exact camera, proportions, window, door, shower, basins, WC. Change only materials, lighting, finishes.
-Do not move the shower toward the window. Do not turn the entrance door into a side-wall door. Do not put the basins inside the shower glass.
-${lock ? `Survey:\n${lock}\n` : ''}
-FLOOR: ${floor || '(distinct from walls)'}
-WALLS: ${wall || '(distinct from floor)'}
+      ? `Photorealistic restyle of the FIRST image: it is the SketchUp model of this exact room. Keep the same axonometric camera, the dividing wall, every fixture as modeled.
+Use the SketchUp components, do not replace them with generic catalog sanitary ware.
+KEEP the shower SEAT/bench inside the shower if the model has one (seduta/panca).
+Do NOT invent a black-framed glass shower screen in the middle of the stall. Glass only where the SketchUp model already has glass.
+Do not add extra partitions. Do not remove the dividing wall between shower and vanity.
+${lock ? `SKETCHUP COMPONENTS:\n${lock}\n` : ''}
+${fx ? 'Named objects: ' + fx : ''}
+FLOOR: ${floor || '(from model / user)'}
+WALLS: ${wall || '(from model / user)'}
 ${modelBrief || ''}
-Style: ${style || 'contemporary Italian interior'}. Photoreal, no text, no people.`
+Style: ${style || 'contemporary Italian interior'}. Photoreal, no SketchUp axes, no watermark, no people.`
       : `Turn the first colored 3D massing into a photoreal bathroom. Keep blocks in place.
-Shower = compact blue corner on the ENTRANCE wall, does not run to the window. Door = brown, SAME entrance wall, not a side door. Window far wall LEFT. Two basins on the left wall OUTSIDE the shower. WC/bidet on the right near the window.
+Shower = compact corner on the entrance wall, does not run to the window. Door on the SAME entrance wall. Keep shower seat. Do not invent a glass box in the middle.
 ${lock ? `Survey:\n${lock}\n` : ''}
 FLOOR: ${floor || ''}
 WALLS: ${wall || ''}
