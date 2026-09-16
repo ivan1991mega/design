@@ -188,7 +188,7 @@
             <label>Pianta PNG e/o modello SketchUp OBJ (facoltativo)</label>
             <div class="file"><input type="file" name="planImage" accept="image/*"></div>
             <p class="hint">Pianta o schermata: il modello rispetta forma e aperture.</p>
-            <div class="file" style="margin-top:8px;"><input type="file" name="model" accept=".obj,.stl,.gltf,.glb,.dae,.mtl,.zip,.txt" multiple></div>
+            <div class="file" style="margin-top:8px;"><input type="file" name="model" accept=".obj,.stl,.gltf,.glb,.dae,.mtl,.zip,.txt,.skp" multiple></div>
             <p class="hint">OBJ, MTL o ZIP. Vale come geometria; pavimento e pareti restano quelli scelti sopra.</p>
           </div>
 
@@ -416,7 +416,7 @@
     <div id="viewer" class="tab-content">
       <div class="card">
         <h2 style="margin-bottom:14px;">Da rilievo: foto o modello 3D</h2>
-        <p class="hint" style="margin-bottom:14px;">PNG/JPG della vista o pianta, e/o OBJ-STL-glTF esportati da SketchUp. Il render deve ripartire da quella geometria, non inventarne un’altra. Il .skp nativo non si legge: da SketchUp usa Esporta → OBJ.</p>
+        <p class="hint" style="margin-bottom:14px;">Carica il <b>.skp</b> di SketchUp così com’è (niente esportazione OBJ). Usiamo la vista salvata nel file e i nomi dei componenti. Puoi comunque aggiungere un PNG della camera se vuoi un’inquadratura diversa.</p>
         <div class="section">
           <label>Cliente (facoltativo)</label>
           <select id="clientSelect" onchange="selectClient(this.value)"><option value="">— Seleziona —</option></select>
@@ -425,10 +425,10 @@
           <label>Trascina PNG, OBJ, MTL o uno ZIP</label>
           <div class="file drop" id="dropZone">
             <div>
-              <p>Trascina qui PNG + OBJ, oppure uno ZIP con OBJ e MTL</p>
+              <p>Trascina qui il file .skp, oppure ZIP / OBJ+PNG</p>
               <p class="hint" id="dropHint">ZIP consigliato: OBJ + MTL + cartella delle jpg (texture SketchUp). Così pavimento e rivestimento restano quelli del catalogo.</p>
             </div>
-            <input type="file" id="mixedFiles" multiple accept="image/png,image/jpeg,image/webp,.obj,.stl,.gltf,.glb,.dae,.mtl,.zip,.txt,application/zip,application/octet-stream" style="display:none">
+            <input type="file" id="mixedFiles" multiple accept="image/png,image/jpeg,image/webp,.obj,.stl,.gltf,.glb,.dae,.mtl,.zip,.txt,.skp,application/zip,application/octet-stream" style="display:none">
           </div>
           <p class="hint" id="modelLabel"></p>
         </div>
@@ -740,7 +740,7 @@ function handleModelSelect() {
 }
 
 function isModelFile(f) {
-  return /\.(obj|stl|gltf|glb|dae|mtl|zip|txt)$/i.test(f.name);
+  return /\.(obj|stl|gltf|glb|dae|mtl|zip|txt|skp)$/i.test(f.name);
 }
 function isImageFile(f) {
   return /^image\//.test(f.type) || /\.(png|jpe?g|webp)$/i.test(f.name);
@@ -870,6 +870,7 @@ async function analyzeImage() {
     };
     if (data.data.planUrl) showPrev('planPreview', data.data.planUrl);
     if (data.data.viewUrl) showPrev('viewPreview', data.data.viewUrl);
+    if (currentSourceImage) showPrev('skpPreview', '/api/renders/media/' + currentSourceImage);
     document.getElementById('renderForm').style.display = 'block';
     const box = document.getElementById('analysisBox');
     if (box) {
