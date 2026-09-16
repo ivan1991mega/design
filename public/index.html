@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="it">
 <head>
@@ -854,18 +855,21 @@ async function analyzeImage() {
     lastSuggested = data.data.suggested || null;
     lastTextureRefs = data.data.textureRefs || lastSuggested?.textureRefs || [];
     lastPlanImage = data.data.planImage || lastSuggested?.planImage || null;
-    if (lastPlanImage) {
-      let planPrev = document.getElementById('planPreview');
-      if (!planPrev) {
-        planPrev = document.createElement('img');
-        planPrev.id = 'planPreview';
-        planPrev.className = 'preview';
-        planPrev.style.marginTop = '10px';
-        document.getElementById('analysisBox')?.after(planPrev);
+    const showPrev = (id, src) => {
+      if (!src) return;
+      let el = document.getElementById(id);
+      if (!el) {
+        el = document.createElement('img');
+        el.id = id;
+        el.className = 'preview';
+        el.style.marginTop = '10px';
+        document.getElementById('analysisBox')?.after(el);
       }
-      planPrev.src = data.data.planUrl || ('/api/renders/media/' + lastPlanImage);
-      planPrev.style.display = 'block';
-    }
+      el.src = src;
+      el.style.display = 'block';
+    };
+    if (data.data.planUrl) showPrev('planPreview', data.data.planUrl);
+    if (data.data.viewUrl) showPrev('viewPreview', data.data.viewUrl);
     document.getElementById('renderForm').style.display = 'block';
     const box = document.getElementById('analysisBox');
     if (box) {
