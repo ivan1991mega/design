@@ -1587,7 +1587,10 @@ Elenca in italiano:
 2. INVENTARIO oggetti visibili (elenco puntato, posizione, quantità). Niente extra.
 3. Geometria: pianta, aperture (porte/finestre/vani) e dove stanno — un vano non è una porta
 4. Layout fisso: muri, divisori, nicchie
-5. Materiali già presenti
+5. RIVESTIMENTI — una riga per superficie, non unificare:
+   - Pavimento: materiale, colore, formato
+   - Parete sinistra / destra / fondo / ingresso: piastrelle o pittura, colore
+   Se una parete è piastrellata e un’altra è liscia, dillo. Non scrivere “pareti beige” per tutte.
 6. Vetri, specchi, vasca/doccia, idromassaggio: sì/no e dove
 7. Cosa è vincolo e cosa è modificabile (solo finiture)
 8. Istruzioni per il render: stessa inquadratura, stessi oggetti, niente accessori inventati
@@ -1628,6 +1631,13 @@ Scrivi in italiano: tipo stanza, quale parete ha la finestra, quale ha la porta,
         }]
       });
       vision = response.choices?.[0]?.message?.content || '';
+    }
+
+    if (vision && mesh) {
+      const floorHit = vision.match(/pavimento[:\s—-]+([^\n]{6,90})/i);
+      const wallHit = vision.match(/parete[^:\n]{0,20}[:\s—-]+([^\n]{6,90})/i);
+      if (!mesh.floorGuess && floorHit) mesh.floorGuess = floorHit[1].replace(/\.$/, '').trim();
+      if (!mesh.wallGuess && wallHit) mesh.wallGuess = wallHit[1].replace(/\.$/, '').trim();
     }
 
     const analysis = [
@@ -1753,9 +1763,9 @@ router.post('/generate-render', async (req, res, next) => {
       } catch {}
     };
     await pushRef(sourceImage);
-    await pushRef(planImage);
+    if (!sourceImage) await pushRef(planImage);
     const extraRefs = Array.isArray(textureRefs) ? textureRefs : [];
-    for (const t of extraRefs.slice(0, 4)) {
+    for (const t of extraRefs.slice(0, 2)) {
       await pushRef(typeof t === 'string' ? t : t.filename);
     }
 
@@ -1766,29 +1776,32 @@ router.post('/generate-render', async (req, res, next) => {
     const isBath = /bagno|bath/i.test(room + ' ' + String(analysis).slice(0, 400));
     const lock = String(layoutLock || '').trim() || (String(analysis).match(/PIANTA VINCOLANTE[\s\S]{0,2500}/) || [''])[0];
     const fromPhoto = Boolean(sourceImage);
+    const cladding = String(analysis).match(/RIVESTIMENTI[\s\S]{0,700}/i)?.[0]
+      || String(analysis).match(/Pavimento[:\s][\s\S]{0,400}/i)?.[0]
+      || '';
     const prompt = fromPhoto
-      ? `Photorealistic restyle of the FIRST image only: it is the SketchUp model of this exact room.
-Keep the same camera, walls, and the same number and place of every fixture.
-Change materials, lighting and finishes. Do not redesign the layout.
-READ THE MODEL CAREFULLY:
-- A round or oval disc on the wall or above the vanity is a MIRROR, not a second sink. Do not add an extra basin.
-- One washbasin if SketchUp shows one. Do not invent a vessel bowl next to it.
-- If the tub has a half glass screen, KEEP that half glass — do not remove it and do not close it into a full box.
-- If the tub has hydromassage jets / bocchette, KEEP them.
-- Do not add toilet-paper holders, bottles, trays, plants, speakers or other accessories that are not in SketchUp.
-- Wall openings stay openings (no extra door leaf).
-- Do not add glass where the model has none; do not delete glass that is already in the model.
-${lock ? `SKETCHUP COMPONENTS:\n${lock}\n` : ''}
+      ? `Photorealistic restyle of the FIRST image (SketchUp screenshot, possibly upscaled). This image is the ONLY layout.
+Keep camera, walls, window, door/openings, and every fixture in the same place and same count.
+Do not add objects. Do not swap WC and bidet. A round/oval wall disc is a MIRROR, not a sink.
+Keep tub glass only as in the photo (half-screen stays half). Keep hydromassage jets if visible.
+No toilet-paper holders, bottles, plants unless they are in the first image.
+
+CLADDING — copy from the first image, wall by wall:
+- Floor material stays on the floor only.
+- Tiled walls stay tiled with the same look; painted walls stay painted.
+- Do not make all walls the same plaster. Do not paint over tiles. Do not put the floor texture on the walls.
+${cladding ? `Survey of finishes:\n${cladding}\n` : ''}
+FLOOR (user): ${floor || '(keep from photo)'}
+WALLS (user): ${wall || '(keep from photo, per wall)'}
+${lock ? `Components:\n${lock}\n` : ''}
 ${fx ? 'Named objects: ' + fx : ''}
-FLOOR: ${floor || '(from model / user)'}
-WALLS: ${wall || '(from model / user)'}
 ${modelBrief || ''}
+If extra reference images follow, they are MATERIAL SAMPLES only (floor/wall textures), not a new layout.
 Style: ${style || 'contemporary Italian interior'}. Photoreal, no SketchUp axes, no watermark, no people.`
-      : `Turn the first colored 3D massing into a photoreal bathroom. Keep blocks in place.
-Shower = compact corner on the entrance wall, does not run to the window. Door on the SAME entrance wall. Keep shower seat. Do not invent a glass box in the middle.
-${lock ? `Survey:\n${lock}\n` : ''}
+      : `Turn the first colored 3D massing into a photoreal room. Keep blocks in place.
 FLOOR: ${floor || ''}
 WALLS: ${wall || ''}
+${lock ? `Survey:\n${lock}\n` : ''}
 ${modelBrief || ''}
 Style: ${style || 'contemporary Italian interior'}. Photoreal, no text, no people.`;
 
