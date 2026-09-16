@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="it">
 <head>
@@ -448,21 +447,36 @@
     <div id="viewer" class="tab-content">
       <div class="card">
         <h2 style="margin-bottom:14px;">Da rilievo: foto o modello 3D</h2>
-        <p class="hint" style="margin-bottom:14px;">Carica il <b>.skp</b> di SketchUp così com’è (niente esportazione OBJ). Usiamo la vista salvata nel file e i nomi dei componenti. Puoi comunque aggiungere un PNG della camera se vuoi un’inquadratura diversa.</p>
+        <p class="hint" style="margin-bottom:14px;">Carica <b>SKP + PNG</b> della stessa vista. Analizza interpola la foto in alta, poi Genera il render su quella.</p>
         <div class="section">
           <label>Cliente (facoltativo)</label>
           <select id="clientSelect" onchange="selectClient(this.value)"><option value="">— Seleziona —</option></select>
         </div>
-        <div class="section">
-          <label>Trascina PNG, OBJ, MTL o uno ZIP</label>
-          <div class="file drop" id="dropZone">
-            <div>
-              <p>Trascina qui il file .skp, oppure ZIP / OBJ+PNG</p>
-              <p class="hint" id="dropHint">ZIP consigliato: OBJ + MTL + cartella delle jpg (texture SketchUp). Così pavimento e rivestimento restano quelli del catalogo.</p>
+        <div class="grid-2">
+          <div class="section">
+            <label>1. File SketchUp (.skp)</label>
+            <div class="file drop" id="dropSkp">
+              <div>
+                <p>Trascina o clicca lo .skp</p>
+                <p class="hint" id="skpHint">Solo il modello 3D</p>
+              </div>
+              <input type="file" id="skpFile" accept=".skp,.zip,.obj,.mtl,application/octet-stream" style="display:none">
             </div>
-            <input type="file" id="mixedFiles" multiple accept="image/png,image/jpeg,image/webp,.obj,.stl,.gltf,.glb,.dae,.mtl,.zip,.txt,.skp,application/zip,application/octet-stream" style="display:none">
           </div>
-          <p class="hint" id="modelLabel"></p>
+          <div class="section">
+            <label>2. Screenshot PNG (stessa vista)</label>
+            <div class="file drop" id="dropPng">
+              <div>
+                <p>Trascina o clicca il PNG 2K</p>
+                <p class="hint" id="pngHint">Da SketchUp, stessa camera</p>
+              </div>
+              <input type="file" id="pngFile" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" style="display:none">
+            </div>
+          </div>
+        </div>
+        <p class="hint" id="modelLabel"></p>
+        <div id="imagePreview" style="display:none; margin-top:8px;">
+          <img id="previewImg" class="preview">
         </div>
         <div class="section">
           <label>Incolla i componenti SketchUp (se il file non parte)</label>
@@ -480,10 +494,7 @@
           <button type="button" class="ghost mic" id="modelDictBtn" onclick="toggleDictation('modelBrief','modelDictBtn')">Detta direttive</button>
           <p class="hint">Cosa rispettare, cosa togliere, unità di misura, punto di vista. Vale per analisi e render.</p>
         </div>
-        <div id="imagePreview" style="display:none; margin-top:14px;">
-          <img id="previewImg" class="preview">
-        </div>
-        <button type="button" id="analyzeBtn" onclick="analyzeImage()" style="margin-top:12px;width:100%;">Analizza il rilievo</button>
+        <button type="button" id="analyzeBtn" onclick="analyzeImage()" style="margin-top:12px;width:100%;">Analizza (interpola e inventario)</button>
         <pre id="analysisBox" class="hint" style="white-space:pre-wrap;margin-top:12px;display:none;"></pre>
         <div id="renderForm" style="display:none; margin-top:16px;">
           <p class="hint" id="detectNote" style="margin-bottom:12px;"></p>
@@ -835,70 +846,67 @@ function switchTab(tab) {
   if (tab === 'archive') loadArchive();
 }
 
-function handleImageSelect() {
-  const file = document.getElementById('imageFile').files[0];
+function setPngPreview(file) {
   if (!file) return;
   currentImage = file;
+  const hint = document.getElementById('pngHint');
+  if (hint) hint.textContent = file.name + ' (' + Math.round(file.size / 1024) + ' KB)';
   const reader = new FileReader();
   reader.onload = e => {
-    document.getElementById('previewImg').src = e.target.result;
-    document.getElementById('imagePreview').style.display = 'block';
+    const img = document.getElementById('previewImg');
+    const box = document.getElementById('imagePreview');
+    if (img) img.src = e.target.result;
+    if (box) box.style.display = 'block';
   };
   reader.readAsDataURL(file);
+  refreshModelLabel();
 }
-
-function handleModelSelect() {
-  const file = document.getElementById('modelFile').files[0];
-  currentModel = file || null;
+function setSkpFile(file) {
+  if (!file) return;
+  if (/\.mtl$/i.test(file.name)) currentMtl = file;
+  else currentModel = file;
+  const hint = document.getElementById('skpHint');
+  if (hint) hint.textContent = file.name + ' (' + Math.round(file.size / 1024) + ' KB)';
+  refreshModelLabel();
+}
+function refreshModelLabel() {
+  const parts = [];
+  if (currentModel) parts.push('SKP: ' + currentModel.name);
+  if (currentImage) parts.push('PNG: ' + currentImage.name);
+  if (currentMtl) parts.push('MTL: ' + currentMtl.name);
   const lab = document.getElementById('modelLabel');
-  if (lab) lab.textContent = file ? file.name + ' (' + Math.round(file.size / 1024) + ' KB)' : '';
+  if (lab) lab.textContent = parts.join(' · ') || 'Carica SKP e, se puoi, il PNG della stessa vista.';
 }
-
+function bindDrop(zoneId, inputId, onFiles) {
+  const zone = document.getElementById(zoneId);
+  const input = document.getElementById(inputId);
+  if (!zone || !input) return;
+  zone.addEventListener('click', () => input.click());
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('over'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.classList.remove('over');
+    onFiles(e.dataTransfer.files);
+  });
+  input.addEventListener('change', () => onFiles(input.files));
+}
 function isModelFile(f) {
   return /\.(obj|stl|gltf|glb|dae|mtl|zip|txt|skp)$/i.test(f.name);
 }
 function isImageFile(f) {
   return /^image\//.test(f.type) || /\.(png|jpe?g|webp)$/i.test(f.name);
 }
-function takeDroppedFiles(files) {
+bindDrop('dropSkp', 'skpFile', (files) => {
   [...files].forEach(f => {
-    if (isImageFile(f)) {
-      currentImage = f;
-      const reader = new FileReader();
-      reader.onload = e => {
-        document.getElementById('previewImg').src = e.target.result;
-        document.getElementById('imagePreview').style.display = 'block';
-      };
-      reader.readAsDataURL(f);
-    } else if (/\.(mtl)$/i.test(f.name)) {
-      currentMtl = f;
-    } else if (isModelFile(f)) {
-      currentModel = f;
-    }
+    if (isImageFile(f)) setPngPreview(f);
+    else setSkpFile(f);
   });
-  const parts = [];
-  if (currentImage) parts.push('PNG/JPG: ' + currentImage.name);
-  if (currentModel) parts.push('Modello: ' + currentModel.name);
-  if (currentMtl) parts.push('MTL: ' + currentMtl.name);
-  const hint = document.getElementById('dropHint');
-  const lab = document.getElementById('modelLabel');
-  if (hint) hint.textContent = parts.join(' + ') || 'Puoi lasciare PNG + OBJ + MTL insieme';
-  if (lab) lab.textContent = parts.join(' · ');
-}
-
-const dropZone = document.getElementById('dropZone');
-const mixedFiles = document.getElementById('mixedFiles');
-if (dropZone && mixedFiles) {
-  dropZone.addEventListener('click', () => mixedFiles.click());
-  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('over'); });
-  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('over'));
-  dropZone.addEventListener('drop', e => {
-    e.preventDefault();
-    dropZone.classList.remove('over');
-    takeDroppedFiles(e.dataTransfer.files);
-  });
-  mixedFiles.addEventListener('change', () => takeDroppedFiles(mixedFiles.files));
-}
+});
+bindDrop('dropPng', 'pngFile', (files) => {
+  const f = [...files].find(isImageFile);
+  if (f) setPngPreview(f);
+});
 
 let recognition = null;
 let dictating = false;
@@ -951,7 +959,7 @@ async function analyzeImage() {
   currentClient = document.getElementById('clientSelect').value || currentClient;
   const objectList = (document.getElementById('objectList')?.value || '').trim();
   if (!currentImage && !currentModel && !objectList) { alert('Carica una foto, un OBJ/ZIP, oppure incolla i nomi SketchUp'); return; }
-  await withBusy('analyzeBtn', 'Analisi in corso — inventario del modello…', async () => {
+  await withBusy('analyzeBtn', 'Analisi + interpolazione in corso…', async () => {
   const fd = new FormData();
   if (currentImage) fd.append('image', currentImage);
   if (currentModel) fd.append('model', currentModel);
