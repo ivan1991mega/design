@@ -155,7 +155,7 @@ const storage = multer.diskStorage({
 });
 
 const IMAGE_MIME = ['image/jpeg', 'image/png', 'image/webp'];
-const MODEL_EXT = ['.obj', '.mtl', '.stl', '.gltf', '.glb', '.dae', '.zip', '.txt'];
+const MODEL_EXT = ['.obj', '.mtl', '.stl', '.gltf', '.glb', '.dae', '.zip', '.txt', '.skp'];
 const MODEL_MIME = [
   'application/octet-stream',
   'application/zip',
@@ -170,13 +170,13 @@ const inflateRaw = promisify(zlib.inflateRaw);
 
 const upload = multer({
   storage,
-  limits: { fileSize: 40 * 1024 * 1024 },
+  limits: { fileSize: 80 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const ext = path.extname(file.originalname || '').toLowerCase();
     const mime = (file.mimetype || '').toLowerCase();
     if (IMAGE_MIME.includes(mime) || MODEL_EXT.includes(ext) || MODEL_MIME.includes(mime) || mime.startsWith('model/')) {
       cb(null, true);
-    } else cb(new Error('Formato non supportato. Usa JPG/PNG, OBJ, MTL o uno ZIP con OBJ+MTL.'));
+    } else cb(new Error('Formato non supportato. Usa JPG/PNG, SKP SketchUp, OBJ, MTL o uno ZIP.'));
   }
 });
 
@@ -833,11 +833,25 @@ function surveyView3d(mesh) {
   const bw = mesh.bbox?.width || 300;
   const bd = mesh.bbox?.depth || 300;
   const bh = mesh.bbox?.height || 270;
-  const cam = { x: bw * 0.5, y: Math.min(150, bh * 0.52), z: bd + 170 };
-  const f = 720;
+  const cam = [bw * 0.58, bh * 1.2, bd * 1.45];
+  const tgt = [bw * 0.4, 50, bd * 0.18];
+  const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  const nrm = (v) => {
+    const l = Math.hypot(v[0], v[1], v[2]) || 1;
+    return [v[0] / l, v[1] / l, v[2] / l];
+  };
+  const crs = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const fwd = nrm(sub(tgt, cam));
+  const rgt = nrm(crs(fwd, [0, 1, 0]));
+  const upv = crs(rgt, fwd);
+  const f = 860;
   const project = (x, y, z) => {
-    const dz = Math.max(12, cam.z - z);
-    return [W * 0.5 + f * (x - cam.x) / dz, H * 0.62 - f * (y - cam.y) / dz, dz];
+    const dx = x - cam[0], dy = y - cam[1], dz = z - cam[2];
+    const cx = dx * rgt[0] + dy * rgt[1] + dz * rgt[2];
+    const cy = dx * upv[0] + dy * upv[1] + dz * upv[2];
+    const cz = dx * fwd[0] + dy * fwd[1] + dz * fwd[2];
+    const d = Math.max(30, cz);
+    return [W * 0.5 + f * cx / d, H * 0.48 - f * cy / d, d];
   };
   const box = (x0, y0, z0, x1, y1, z1, col) => {
     const P = (x, y, z) => project(x, y, z);
@@ -848,14 +862,12 @@ function surveyView3d(mesh) {
     quad([P(x0, y1, z0), P(x0, y1, z1), P(x1, y1, z1), P(x1, y1, z0)], [Math.min(255, col[0] + 25), Math.min(255, col[1] + 25), Math.min(255, col[2] + 25)]);
   };
 
-  // sky through window
   for (let i = 0; i < rgb.length; i += 3) { rgb[i] = 186; rgb[i + 1] = 210; rgb[i + 2] = 230; }
 
-  box(0, 0, 0, bw, 2, bd, [90, 90, 95]);
-  box(0, bh - 2, 0, bw, bh, bd, [235, 232, 226]);
-  box(0, 0, 0, 4, bh, bd, [220, 216, 208]);
-  box(bw - 4, 0, 0, bw, bh, bd, [210, 206, 198]);
-  box(0, 0, 0, bw, bh, 4, [225, 221, 214]);
+  box(0, 0, 0, bw, 2, bd, [110, 110, 116]);
+  box(0, 0, 0, 3, bh * 0.92, bd, [228, 224, 216]);
+  box(bw - 3, 0, 0, bw, bh * 0.92, bd, [218, 214, 206]);
+  box(0, 0, 0, bw, bh * 0.92, 3, [232, 228, 220]);
 
   const lab = (a) => {
     const n = normName(a.name + ' ' + (a.type || '') + ' ' + (a.role || ''));
@@ -1009,6 +1021,102 @@ async function unzipLocalScan(buf) {
 
 function looksLikeObj(text) {
   return /(^|\n)\s*(v |f |o |g |mtllib |usemtl )/m.test(String(text).slice(0, 8000));
+}
+
+function extractPngsFromBuffer(buf) {
+  const out = [];
+  const sig = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  let i = 0;
+  while (i < buf.length - 24) {
+    const at = buf.indexOf(sig, i);
+    if (at < 0) break;
+    let p = at + 8;
+    let ok = false;
+    while (p + 12 <= buf.length) {
+      const len = buf.readUInt32BE(p);
+      const type = buf.toString('ascii', p + 4, p + 8);
+      if (!Number.isFinite(len) || len < 0 || len > 40e6) break;
+      p += 12 + len;
+      if (type === 'IEND') { ok = true; break; }
+    }
+    if (ok && p - at > 400) out.push({ start: at, buf: buf.slice(at, p) });
+    i = at + 8;
+  }
+  return out;
+}
+
+function skpStringNames(buf) {
+  const found = new Set();
+  const add = (s) => {
+    const t = String(s || '').replace(/\0/g, '').trim();
+    if (t.length < 3 || t.length > 80) return;
+    if (!/[A-Za-z]/.test(t)) return;
+    if (/^https?:/i.test(t)) return;
+    found.add(t);
+  };
+  let ascii = '';
+  for (let i = 0; i < buf.length; i++) {
+    const c = buf[i];
+    if (c >= 32 && c < 127) ascii += String.fromCharCode(c);
+    else {
+      if (ascii.length >= 4) add(ascii);
+      ascii = '';
+    }
+  }
+  if (ascii.length >= 4) add(ascii);
+  for (let i = 0; i + 7 < buf.length; i++) {
+    if (buf[i] === 0 || buf[i + 1] !== 0) continue;
+    let s = '';
+    let j = i;
+    while (j + 1 < buf.length && buf[j + 1] === 0 && buf[j] >= 32 && buf[j] < 127) {
+      s += String.fromCharCode(buf[j]);
+      j += 2;
+    }
+    if (s.length >= 4) add(s);
+    i = j;
+  }
+  return [...found];
+}
+
+async function parseSkpBuffer(buf, doorHint) {
+  if (!Buffer.isBuffer(buf) || buf.length < 64) return null;
+  const pngs = extractPngsFromBuffer(buf);
+  pngs.sort((a, b) => b.buf.length - a.buf.length);
+  let entries = {};
+  const pk = buf.indexOf(Buffer.from([0x50, 0x4b, 0x03, 0x04]));
+  if (pk >= 0) {
+    try { entries = await unzipEntries(buf.slice(pk)); } catch (err) { console.error('skp zip', err.message); }
+  }
+  let preview = pngs[0]?.buf || null;
+  const textures = [];
+  for (const [name, data] of Object.entries(entries)) {
+    const low = name.replace(/\\/g, '/').toLowerCase();
+    if (low.includes('model_thumbnail') && data.length > 800) preview = data;
+    else if (low.includes('preview') && data.length > 800 && (!preview || data.length > preview.length)) preview = data;
+    if (/\.(jpe?g|png|webp)$/.test(low) && data.length > 1200 && !/thumbnail|preview/i.test(low)) {
+      textures.push({ name, buf: data });
+    }
+  }
+  const names = skpStringNames(buf)
+    .filter((n) => classifyPart(n) !== 'object' || scoreText(n).confidence > 0)
+    .slice(0, 80);
+  const blob = names.join('\n');
+  const scored = scoreText(blob + ' ' + (doorHint || ''));
+  const objects = names.slice(0, 40).map((name) => ({ name, role: classifyPart(name), faces: 0, materials: [] }));
+  const fixtures = [...new Set(objects.filter((o) => /sanitari|doccia|lavabo|wc|bidet|finestra|porta|cucina|divano|letto/.test(o.role + o.name.toLowerCase())).map((o) => o.name))].slice(0, 20);
+  return {
+    format: 'skp',
+    suggestedRoom: scored.best || 'altro',
+    roomConfidence: scored.confidence,
+    roomScores: scored.scores,
+    objects,
+    fixtures,
+    materials: textures.map((t) => t.name).slice(0, 20),
+    note: 'File SketchUp (.skp) letto direttamente: vista salvata nel file + nomi componenti. Il render parte da quella inquadratura, non da un OBJ esportato.',
+    preview,
+    textures: textures.slice(0, 8),
+    pngCount: pngs.length
+  };
 }
 
 function parseStlSummary(buf) {
@@ -1189,18 +1297,32 @@ router.post('/analyze-image', analyzeUpload, async (req, res, next) => {
     let modelFile = req.files?.model?.[0] || (!imageFile ? req.file : null);
     const mtlUpload = req.files?.mtl?.[0];
     if (!imageFile && !modelFile && !pastedNames) {
-      return res.status(400).json({ success: false, error: 'Carica una foto, un OBJ (o ZIP con OBJ+MTL), oppure incolla i nomi dei componenti SketchUp' });
+      return res.status(400).json({ success: false, error: 'Carica uno SketchUp .skp, una foto, un OBJ (o ZIP), oppure incolla i nomi dei componenti' });
     }
 
     const ext = modelFile ? path.extname(modelFile.originalname || '').toLowerCase() : '';
-    if (ext === '.skp') {
-      return res.status(400).json({ success: false, error: 'Il file .skp di SketchUp non è leggibile. Esporta in OBJ (File → Esporta → Oggetto 3D) oppure metti OBJ+MTL in uno ZIP.' });
-    }
 
     let mesh = null;
     let mtlText = mtlUpload ? await fs.readFile(mtlUpload.path, 'utf8') : '';
+    let skpSourceName = null;
 
     let zipMaps = [];
+    const ingestSkp = async (buf) => {
+      const skp = await parseSkpBuffer(buf, req.body?.doorHint || req.body?.modelBrief);
+      if (!skp) return;
+      mesh = skp;
+      await fs.mkdir(UPLOADS_DIR, { recursive: true });
+      if (skp.preview && skp.preview.length > 800) {
+        skpSourceName = `skp-view-${Date.now()}.png`;
+        await fs.writeFile(path.join(UPLOADS_DIR, skpSourceName), skp.preview);
+      }
+      for (const t of skp.textures || []) {
+        const base = path.basename(t.name).replace(/[^\w.\-]+/g, '_') || 'tex.png';
+        const filename = `tex-${Date.now()}-${base}`;
+        await fs.writeFile(path.join(UPLOADS_DIR, filename), t.buf);
+        zipMaps.push({ original: t.name, basename: base, filename, bytes: t.buf.length });
+      }
+    };
     if (modelFile && ext === '.zip') {
       const entries = await unzipEntries(await fs.readFile(modelFile.path));
       const names = Object.keys(entries);
@@ -1215,25 +1337,37 @@ router.post('/analyze-image', analyzeUpload, async (req, res, next) => {
         return low.endsWith('.mtl') && !low.includes('__macosx') && !base.startsWith('._');
       });
       if (!objName) {
+        const skpName = names.find((n) => {
+          const low = n.toLowerCase();
+          const base = low.split('/').pop();
+          return low.endsWith('.skp') && !low.includes('__macosx') && !base.startsWith('._');
+        });
+        if (skpName) {
+          await ingestSkp(entries[skpName]);
+        } else {
         const seen = names.map((n) => n.split('/').pop()).filter(Boolean).slice(0, 12).join(', ') || 'vuoto';
         return res.status(400).json({
           success: false,
-          error: `Nello ZIP non c’è un file .obj (trovato: ${seen}). Zippa OBJ+MTL+cartella jpg, anche se sono in una sottocartella.`
+          error: `Nello ZIP non c’è un file .obj o .skp (trovato: ${seen}). Zippa SKP, oppure OBJ+MTL+cartella jpg.`
         });
+        }
+      } else {
+        if (mtlName) mtlText = entries[mtlName].toString('utf8');
+        mesh = parseObjSummary(entries[objName].toString('utf8'), mtlText, req.body?.doorHint || req.body?.modelBrief);
+        await fs.mkdir(UPLOADS_DIR, { recursive: true });
+        for (const [name, buf] of Object.entries(entries)) {
+          const low = name.replace(/\\/g, '/').toLowerCase();
+          if (low.includes('__macosx')) continue;
+          if (!/\.(jpe?g|png|webp)$/.test(low)) continue;
+          if (!buf || buf.length < 800) continue;
+          const base = path.basename(name).replace(/[^\w.\-]+/g, '_');
+          const filename = `tex-${Date.now()}-${base}`;
+          await fs.writeFile(path.join(UPLOADS_DIR, filename), buf);
+          zipMaps.push({ original: name, basename: path.basename(name), filename, bytes: buf.length });
+        }
       }
-      if (mtlName) mtlText = entries[mtlName].toString('utf8');
-      mesh = parseObjSummary(entries[objName].toString('utf8'), mtlText, req.body?.doorHint || req.body?.modelBrief);
-      await fs.mkdir(UPLOADS_DIR, { recursive: true });
-      for (const [name, buf] of Object.entries(entries)) {
-        const low = name.replace(/\\/g, '/').toLowerCase();
-        if (low.includes('__macosx')) continue;
-        if (!/\.(jpe?g|png|webp)$/.test(low)) continue;
-        if (!buf || buf.length < 800) continue;
-        const base = path.basename(name).replace(/[^\w.\-]+/g, '_');
-        const filename = `tex-${Date.now()}-${base}`;
-        await fs.writeFile(path.join(UPLOADS_DIR, filename), buf);
-        zipMaps.push({ original: name, basename: path.basename(name), filename, bytes: buf.length });
-      }
+    } else if (modelFile && ext === '.skp') {
+      await ingestSkp(await fs.readFile(modelFile.path));
     } else if (modelFile && (ext === '.obj' || ext === '.txt' || ext === '')) {
       const text = await fs.readFile(modelFile.path, 'utf8');
       if (looksLikeObj(text) || ext === '.obj') mesh = parseObjSummary(text, mtlText, req.body?.doorHint || req.body?.modelBrief);
@@ -1428,7 +1562,7 @@ Scrivi in italiano: tipo stanza, quale parete ha la finestra, quale ha la porta,
         planImage,
         planUrl: plan2dName ? `/api/renders/media/${plan2dName}` : null,
         viewUrl: planImage ? `/api/renders/media/${planImage}` : null,
-        sourceImage: imageFile ? imageFile.filename : null,
+        sourceImage: imageFile ? imageFile.filename : skpSourceName,
         sourceModel: modelFile ? modelFile.filename : null
       }
     });
@@ -1446,29 +1580,19 @@ router.post('/generate-render', async (req, res, next) => {
 
     const client = await ensureClient(req.adminId, clientId);
     const refs = [];
-    if (planImage) {
-      const p = path.join(UPLOADS_DIR, path.basename(planImage));
-      try {
-        await fs.access(p);
-        refs.push(p);
-      } catch {}
-    }
-    if (sourceImage) {
-      const p = path.join(UPLOADS_DIR, path.basename(sourceImage));
-      try {
-        await fs.access(p);
-        refs.push(p);
-      } catch {}
-    }
-    const extraRefs = Array.isArray(textureRefs) ? textureRefs : [];
-    for (const t of extraRefs.slice(0, 4)) {
-      const name = typeof t === 'string' ? t : t.filename;
-      if (!name) continue;
+    const pushRef = async (name) => {
+      if (!name) return;
       const p = path.join(UPLOADS_DIR, path.basename(name));
       try {
         await fs.access(p);
         refs.push(p);
       } catch {}
+    };
+    await pushRef(sourceImage);
+    await pushRef(planImage);
+    const extraRefs = Array.isArray(textureRefs) ? textureRefs : [];
+    for (const t of extraRefs.slice(0, 4)) {
+      await pushRef(typeof t === 'string' ? t : t.filename);
     }
 
     const room = String(roomType || '').trim();
@@ -1477,25 +1601,22 @@ router.post('/generate-render', async (req, res, next) => {
     const fx = Array.isArray(fixtures) ? fixtures.filter(Boolean).join(', ') : String(fixtures || '');
     const isBath = /bagno|bath/i.test(room + ' ' + String(analysis).slice(0, 400));
     const lock = String(layoutLock || '').trim() || (String(analysis).match(/PIANTA VINCOLANTE[\s\S]{0,2500}/) || [''])[0];
-    const prompt = `Turn this COLORED 3D MASSING into a photorealistic Italian bathroom photo. Keep every block where it is.
-The first image is a camera view from inside the room, looking at the window wall:
-- BLUE box = shower, ONLY in the near-left corner on the ENTRANCE wall. It must NOT run along the left wall to the window.
-- BROWN box = door, on the SAME entrance wall as the shower, near-right. Not a door on the side wall.
-- CYAN = window on the FAR wall, shifted LEFT, not centered.
-- BEIGE = two washbasins on the left wall, mid-distance, separate from the shower.
-- WHITE = wall-hung WC on the right wall near the window. LILAC = bidet in front of the WC.
-Do not rearrange. Do not invent a side door. Do not stretch the shower to the window. Change only materials, tiles, lighting.
-${lock ? `LOCKED SURVEY:\n${lock}\n` : ''}
-ROOM: ${room || 'bathroom'}${isBath ? '. Bathroom, never a bedroom.' : ''}
+    const fromPhoto = Boolean(sourceImage);
+    const prompt = fromPhoto
+      ? `Photorealistic restyle of the FIRST image, which is a SketchUp (or photo) camera of the EXISTING room. Keep the exact camera, proportions, window, door, shower, basins, WC. Change only materials, lighting, finishes.
+Do not move the shower toward the window. Do not turn the entrance door into a side-wall door. Do not put the basins inside the shower glass.
+${lock ? `Survey:\n${lock}\n` : ''}
 FLOOR: ${floor || '(distinct from walls)'}
 WALLS: ${wall || '(distinct from floor)'}
-${fx ? 'Fixtures: ' + fx : ''}
-User finish notes: ${modelBrief || 'none'}
-Style: ${style || 'contemporary Italian interior'}
-Lighting: ${lighting || 'mixed natural and artificial'}
-Palette: ${colors || 'as specified'}
-${extraRefs.length ? 'Extra images are catalog textures only.' : ''}
-Photoreal, no text, no watermark, no people.`;
+${modelBrief || ''}
+Style: ${style || 'contemporary Italian interior'}. Photoreal, no text, no people.`
+      : `Turn the first colored 3D massing into a photoreal bathroom. Keep blocks in place.
+Shower = compact blue corner on the ENTRANCE wall, does not run to the window. Door = brown, SAME entrance wall, not a side door. Window far wall LEFT. Two basins on the left wall OUTSIDE the shower. WC/bidet on the right near the window.
+${lock ? `Survey:\n${lock}\n` : ''}
+FLOOR: ${floor || ''}
+WALLS: ${wall || ''}
+${modelBrief || ''}
+Style: ${style || 'contemporary Italian interior'}. Photoreal, no text, no people.`;
 
     const item = await generateInteriorImage(prompt, refs);
     const savedPhoto = await saveGeneratedImage(item, 'render');
