@@ -1,5 +1,4 @@
 
-
 <!DOCTYPE html>
 <html lang="it">
 <head>
@@ -59,9 +58,23 @@
     white-space:nowrap;
     overflow:visible;
   }
-  button { background:var(--accent); color:#1a140c; border:0; border-radius:999px; padding:11px 18px; font-weight:600; cursor:pointer; }
+  button { background:var(--accent); color:#1a140c; border:0; border-radius:999px; padding:11px 18px; font-weight:600; cursor:pointer; transition: transform .12s ease, filter .15s, box-shadow .15s, opacity .15s; }
   button.ghost { background:transparent; color:var(--text); border:1px solid var(--line); }
   button.danger { background:var(--danger); color:#fff; }
+  button:active:not(:disabled) { transform: scale(.96); filter: brightness(1.12); }
+  button.hit { transform: scale(.96); box-shadow: 0 0 0 3px rgba(196,165,116,.45); }
+  button.busy, button:disabled { opacity:.72; cursor: wait; pointer-events: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #actionStatus {
+    display:none; align-items:center; gap:10px;
+    background:#2a2418; border:1px solid var(--accent); color:var(--accent2);
+    border-radius:12px; padding:11px 14px; margin-bottom:14px; font-size:14px;
+  }
+  #actionStatus.show { display:flex; }
+  #actionStatus .dot {
+    width:14px; height:14px; border:2px solid var(--accent); border-top-color:transparent;
+    border-radius:50%; animation: spin .7s linear infinite; flex:0 0 auto;
+  }
   .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:14px; }
   .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
   @media (max-width:800px){ .grid-2 { grid-template-columns:1fr; } }
@@ -118,6 +131,7 @@
     <button class="ghost" onclick="logout()">Esci</button>
   </div>
   <div class="wrap">
+    <div id="actionStatus"><span class="dot"></span><span id="actionStatusText">Un attimo…</span></div>
     <div class="stats">
       <div class="card"><div class="stat-l">Clienti</div><div class="stat-n" id="totalClients">0</div></div>
       <div class="card"><div class="stat-l">Render</div><div class="stat-n" id="totalRenders">0</div></div>
@@ -389,7 +403,7 @@
             </select>
           </div>
 
-          <button type="submit" style="width:100%;">Genera viste</button>
+          <button type="submit" id="configSubmitBtn" style="width:100%;">Genera viste</button>
         </form>
 
         <div id="configLoading" style="display:none; padding:28px; text-align:center; color:var(--muted);">Generazione in corso, anche 1-2 minuti…</div>
@@ -469,7 +483,7 @@
         <div id="imagePreview" style="display:none; margin-top:14px;">
           <img id="previewImg" class="preview">
         </div>
-        <button type="button" onclick="analyzeImage()" style="margin-top:12px;width:100%;">Analizza il rilievo</button>
+        <button type="button" id="analyzeBtn" onclick="analyzeImage()" style="margin-top:12px;width:100%;">Analizza il rilievo</button>
         <pre id="analysisBox" class="hint" style="white-space:pre-wrap;margin-top:12px;display:none;"></pre>
         <div id="renderForm" style="display:none; margin-top:16px;">
           <p class="hint" id="detectNote" style="margin-bottom:12px;"></p>
@@ -494,7 +508,7 @@
             <select id="renderLighting"><option>Naturale</option><option>Calda</option><option>Mista</option></select>
           </div>
           <div class="section"><label>Colori (nomi liberi)</label><input id="renderColors" placeholder="ottanio, grigio topo"></div>
-          <button type="button" onclick="generaRender()" style="width:100%;">Genera render da rilievo</button>
+          <button type="button" id="generaBtn" onclick="generaRender()" style="width:100%;">Genera render da rilievo</button>
           <p class="hint">Dopo il render compare sotto la foto il tasto <b>Correggi questo render</b>.</p>
           <button type="button" class="ghost" onclick="applyAnalysisToConfig()" style="width:100%;margin-top:8px;">Porta stanza e finiture nel configuratore</button>
         </div>
@@ -542,7 +556,6 @@ let archiveItems = [];
 let lbIndex = 0;
 let configViews = [];
 let viewTimer = null;
-let currentViewIndex = 0;
 
 function viewArchive(i) {
   if (!archiveItems.length) return;
@@ -568,6 +581,43 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowLeft') lbStep(-1);
   if (e.key === 'ArrowRight') lbStep(1);
 });
+let currentViewIndex = 0;
+
+function showStatus(msg) {
+  const box = document.getElementById('actionStatus');
+  const tx = document.getElementById('actionStatusText');
+  if (tx) tx.textContent = msg || 'Un attimo…';
+  if (box) box.classList.add('show');
+}
+function hideStatus() {
+  document.getElementById('actionStatus')?.classList.remove('show');
+}
+async function withBusy(btn, wait, fn) {
+  const el = typeof btn === 'string' ? document.getElementById(btn) || document.querySelector(btn) : btn;
+  const idle = el && !el.dataset.idle ? el.textContent : (el?.dataset.idle || '');
+  if (el) {
+    if (!el.dataset.idle) el.dataset.idle = idle;
+    el.disabled = true;
+    el.classList.add('busy', 'hit');
+    el.textContent = wait;
+  }
+  showStatus(wait);
+  try { return await fn(); }
+  finally {
+    if (el) {
+      el.disabled = false;
+      el.classList.remove('busy', 'hit');
+      el.textContent = el.dataset.idle || idle;
+    }
+    hideStatus();
+  }
+}
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b || b.disabled) return;
+  b.classList.add('hit');
+  setTimeout(() => b.classList.remove('hit'), 220);
+}, true);
 
 function toggleRoomExtras() {
   const room = document.getElementById('roomType').value;
@@ -901,6 +951,7 @@ async function analyzeImage() {
   currentClient = document.getElementById('clientSelect').value || currentClient;
   const objectList = (document.getElementById('objectList')?.value || '').trim();
   if (!currentImage && !currentModel && !objectList) { alert('Carica una foto, un OBJ/ZIP, oppure incolla i nomi SketchUp'); return; }
+  await withBusy('analyzeBtn', 'Analisi in corso — inventario del modello…', async () => {
   const fd = new FormData();
   if (currentImage) fd.append('image', currentImage);
   if (currentModel) fd.append('model', currentModel);
@@ -940,7 +991,7 @@ async function analyzeImage() {
     const box = document.getElementById('analysisBox');
     if (box) {
       box.style.display = 'block';
-      box.textContent = currentAnalysis.slice(0, 2500);
+      box.textContent = currentAnalysis.slice(0, 4500);
     }
     const s = lastSuggested || {};
     const roomEl = document.getElementById('renderRoom');
@@ -962,10 +1013,12 @@ async function analyzeImage() {
       document.getElementById('modelBrief').value = 'È un bagno. Tieni sanitari, lavabo e doccia/vasca dove sono nel modello. Non fare una camera da letto.';
     }
   } else alert(data.error || 'Errore analisi');
+  });
 }
 
 async function generaRender() {
   if (!currentAnalysis) return;
+  await withBusy('generaBtn', 'Genero il render…', async () => {
   currentClient = document.getElementById('clientSelect').value || currentClient;
   const res = await fetch('/api/renders/generate-render', {
     method: 'POST',
@@ -997,6 +1050,7 @@ async function generaRender() {
     loadArchive();
     document.getElementById('renderResult').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } else alert(data.error || 'Errore render');
+  });
 }
 
 async function correggiRender(notesId) {
@@ -1011,9 +1065,7 @@ async function correggiRender(notesId) {
     return;
   }
   const btn = document.getElementById(notesId === 'correctNotesConfig' ? 'fixConfigBtn' : 'fixRenderBtn');
-  const old = btn ? btn.textContent : '';
-  if (btn) { btn.disabled = true; btn.textContent = 'Correggo…'; }
-  try {
+  await withBusy(btn, 'Correggo il render…', async () => {
     const res = await fetch('/api/renders/correct-render', {
       method: 'POST',
       headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
@@ -1039,11 +1091,7 @@ async function correggiRender(notesId) {
       loadStats();
       loadArchive();
     } else alert(data.error || 'Errore correzione');
-  } catch (err) {
-    alert(err.message || 'Errore rete');
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = old || 'Correggi questo render'; }
-  }
+  });
 }
 
 function resetRender() {
@@ -1121,6 +1169,7 @@ async function submitConfig(e) {
     showConfigBanner(['Cliente — il server attuale lo richiede ancora. Tab Clienti → Nuovo cliente.']);
     return;
   }
+  await withBusy('configSubmitBtn', 'Genero le viste…', async () => {
   const payload = {
     clientId: clientId || undefined,
     roomType: fd.get('room') || 'salotto',
@@ -1202,6 +1251,7 @@ async function submitConfig(e) {
     if (!mapped.length) mapped.push(msg);
     showConfigBanner(mapped);
   }
+  });
 }
 
 function showView(i) {
