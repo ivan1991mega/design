@@ -636,6 +636,116 @@ function encodePng(width, height, rgb) {
   ]);
 }
 
+function paeth(a, b, c) {
+  const p = a + b - c;
+  const pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c);
+  if (pa <= pb && pa <= pc) return a;
+  if (pb <= pc) return b;
+  return c;
+}
+
+function decodePngRgb(buf) {
+  if (!Buffer.isBuffer(buf) || buf.length < 24 || buf[0] !== 0x89) return null;
+  let w = 0, h = 0, depth = 0, ctype = 0;
+  const idat = [];
+  let p = 8;
+  while (p + 12 <= buf.length) {
+    const len = buf.readUInt32BE(p);
+    const type = buf.toString('ascii', p + 4, p + 8);
+    const data = buf.slice(p + 8, p + 8 + len);
+    if (type === 'IHDR') {
+      w = data.readUInt32BE(0);
+      h = data.readUInt32BE(4);
+      depth = data[8];
+      ctype = data[9];
+    } else if (type === 'IDAT') idat.push(data);
+    else if (type === 'IEND') break;
+    p += 12 + len;
+  }
+  if (!w || !h || depth !== 8 || (ctype !== 2 && ctype !== 6) || w > 4096 || h > 4096) return null;
+  let raw;
+  try { raw = zlib.inflateSync(Buffer.concat(idat)); } catch { return null; }
+  const bpp = ctype === 6 ? 4 : 3;
+  const stride = w * bpp;
+  const rgb = Buffer.alloc(w * h * 3);
+  let src = 0;
+  let prev = Buffer.alloc(stride);
+  for (let y = 0; y < h; y++) {
+    if (src + 1 + stride > raw.length) return null;
+    const filter = raw[src++];
+    const row = Buffer.alloc(stride);
+    for (let i = 0; i < stride; i++) {
+      const x = raw[src + i];
+      const a = i >= bpp ? row[i - bpp] : 0;
+      const b = prev[i];
+      const c = i >= bpp ? prev[i - bpp] : 0;
+      let v = x;
+      if (filter === 1) v = (x + a) & 255;
+      else if (filter === 2) v = (x + b) & 255;
+      else if (filter === 3) v = (x + ((a + b) >> 1)) & 255;
+      else if (filter === 4) v = (x + paeth(a, b, c)) & 255;
+      row[i] = v;
+    }
+    src += stride;
+    prev = row;
+    for (let x = 0; x < w; x++) {
+      const o = (y * w + x) * 3;
+      rgb[o] = row[x * bpp];
+      rgb[o + 1] = row[x * bpp + 1];
+      rgb[o + 2] = row[x * bpp + 2];
+    }
+  }
+  return { w, h, rgb };
+}
+
+function upscalePng(buf, maxSide = 1536) {
+  const dec = decodePngRgb(buf);
+  if (!dec) return buf;
+  const { w, h, rgb } = dec;
+  const long = Math.max(w, h);
+  if (long >= maxSide) return buf;
+  const scale = maxSide / long;
+  const nw = Math.max(1, Math.round(w * scale));
+  const nh = Math.max(1, Math.round(h * scale));
+  const out = Buffer.alloc(nw * nh * 3);
+  const sample = (xf, yf, c) => {
+    const x0 = Math.min(w - 1, Math.max(0, Math.floor(xf)));
+    const y0 = Math.min(h - 1, Math.max(0, Math.floor(yf)));
+    const x1 = Math.min(w - 1, x0 + 1);
+    const y1 = Math.min(h - 1, y0 + 1);
+    const tx = xf - x0, ty = yf - y0;
+    const p = (x, y) => rgb[(y * w + x) * 3 + c];
+    return (p(x0, y0) * (1 - tx) * (1 - ty) + p(x1, y0) * tx * (1 - ty) + p(x0, y1) * (1 - tx) * ty + p(x1, y1) * tx * ty);
+  };
+  for (let y = 0; y < nh; y++) {
+    for (let x = 0; x < nw; x++) {
+      const xf = (x + 0.5) / scale - 0.5;
+      const yf = (y + 0.5) / scale - 0.5;
+      const o = (y * nw + x) * 3;
+      out[o] = Math.max(0, Math.min(255, Math.round(sample(xf, yf, 0))));
+      out[o + 1] = Math.max(0, Math.min(255, Math.round(sample(xf, yf, 1))));
+      out[o + 2] = Math.max(0, Math.min(255, Math.round(sample(xf, yf, 2))));
+    }
+  }
+  // mild sharpen so edges (sanitari, vetro) stay readable
+  const sharp = Buffer.from(out);
+  const k = [-0.08, -0.08, -0.08, -0.08, 1.64, -0.08, -0.08, -0.08, -0.08];
+  for (let y = 1; y < nh - 1; y++) {
+    for (let x = 1; x < nw - 1; x++) {
+      for (let c = 0; c < 3; c++) {
+        let acc = 0, ki = 0;
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            acc += out[((y + dy) * nw + (x + dx)) * 3 + c] * k[ki++];
+          }
+        }
+        sharp[(y * nw + x) * 3 + c] = Math.max(0, Math.min(255, Math.round(acc)));
+      }
+    }
+  }
+  return encodePng(nw, nh, sharp);
+}
+
 function colorForPart(name, role, type) {
   const n = normName(name + ' ' + (type || '') + ' ' + (role || ''));
   if (/(finestra|window)/.test(n)) return [0, 170, 210];
@@ -1333,8 +1443,10 @@ router.post('/analyze-image', analyzeUpload, async (req, res, next) => {
       mesh = skp;
       await fs.mkdir(UPLOADS_DIR, { recursive: true });
       if (skp.preview && skp.preview.length > 800) {
+        let view = skp.preview;
+        try { view = upscalePng(skp.preview, 1536); } catch (err) { console.error('skp upscale', err.message); }
         skpSourceName = `skp-view-${Date.now()}.png`;
-        await fs.writeFile(path.join(UPLOADS_DIR, skpSourceName), skp.preview);
+        await fs.writeFile(path.join(UPLOADS_DIR, skpSourceName), view);
       }
       for (const t of skp.textures || []) {
         const base = path.basename(t.name).replace(/[^\w.\-]+/g, '_') || 'tex.png';
@@ -1431,7 +1543,15 @@ router.post('/analyze-image', analyzeUpload, async (req, res, next) => {
 
     const modelBrief = String(req.body?.modelBrief || '').trim();
     let vision = '';
-    const visionFile = imageFile?.path || (skpSourceName ? path.join(UPLOADS_DIR, skpSourceName) : null);
+    let hqName = skpSourceName;
+    if (imageFile) {
+      let buf = await fs.readFile(imageFile.path);
+      try { buf = upscalePng(buf, 1536); } catch (err) { console.error('png upscale', err.message); }
+      hqName = `view-hq-${Date.now()}.png`;
+      await fs.mkdir(UPLOADS_DIR, { recursive: true });
+      await fs.writeFile(path.join(UPLOADS_DIR, hqName), buf);
+    }
+    const visionFile = hqName ? path.join(UPLOADS_DIR, hqName) : null;
     if (visionFile) {
       const imageBuffer = await fs.readFile(visionFile);
       const base64Image = imageBuffer.toString('base64');
@@ -1606,7 +1726,7 @@ Scrivi in italiano: tipo stanza, quale parete ha la finestra, quale ha la porta,
         planImage,
         planUrl: plan2dName ? `/api/renders/media/${plan2dName}` : null,
         viewUrl: planImage ? `/api/renders/media/${planImage}` : null,
-        sourceImage: imageFile ? imageFile.filename : skpSourceName,
+        sourceImage: hqName,
         sourceModel: modelFile ? modelFile.filename : null
       }
     });
