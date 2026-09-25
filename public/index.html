@@ -982,7 +982,7 @@ async function analyzeImage() {
   currentClient = document.getElementById('clientSelect').value || currentClient;
   const objectList = (document.getElementById('objectList')?.value || '').trim();
   if (!currentImage && !currentModel && !objectList) { alert('Carica una foto, un OBJ/ZIP, oppure incolla i nomi SketchUp'); return; }
-  await withBusy('analyzeBtn', 'Analisi + interpolazione in corso…', async () => {
+  await withBusy('analyzeBtn', 'Analisi profonda: inventario di ogni oggetto…', async () => {
   const fd = new FormData();
   if (currentImage) fd.append('image', currentImage);
   if (currentModel) fd.append('model', currentModel);

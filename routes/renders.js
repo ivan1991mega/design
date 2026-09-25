@@ -1310,13 +1310,19 @@ async function generateInteriorImage(prompt, refPaths = []) {
       const type = extn === '.jpg' || extn === '.jpeg' ? 'image/jpeg' : extn === '.webp' ? 'image/webp' : 'image/png';
       images.push(await toFile(buf, path.basename(p), { type }));
     }
-    response = await openai.images.edit({
+    const editParams = {
       model,
       image: images.length === 1 ? images[0] : images,
       prompt,
       size: process.env.OPENAI_IMAGE_SIZE || '1536x1024',
       quality
-    });
+    };
+    try {
+      response = await openai.images.edit({ ...editParams, input_fidelity: 'high' });
+    } catch (err) {
+      if (!/fidelity|unknown|unexpected|invalid/i.test(String(err.message || err))) throw err;
+      response = await openai.images.edit(editParams);
+    }
   } else {
     const params = { model, prompt, n: 1, size: process.env.OPENAI_IMAGE_SIZE || '1536x1024' };
     if (model.startsWith('gpt-image')) params.quality = quality;
@@ -1574,12 +1580,12 @@ Se la linea di stacco si vede, segnala dove finisce la piastrella e inizia la pi
         : '';
       const response = await openai.chat.completions.create({
         model: 'gpt-4o',
-        max_tokens: 2200,
+        max_tokens: 3500,
         messages: [
           {
             role: 'user',
             content: [
-              { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64Image}` } },
+              { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64Image}`, detail: 'high' } },
               {
                 type: 'text',
                 text: `Sei un architetto. Analizza QUESTO spazio come base vincolante per un render fotorealistico.
@@ -1595,9 +1601,9 @@ Elenca in italiano:
    - Ogni parete: materiale + tutta altezza / mezza altezza (cm) / solo zoccolo / solo doccia
    Se la piastrella si ferma a metà muro, scrivi l’altezza dello stacco. Non unificare le pareti.
 6. NICCHIE: incavi a muro (doccia, saponi, mensole). Parete, altezza, misura. Se assenti: "nessuna nicchia".
-7. OGGETTI BLOCCATI dallo SKP: rubinetti, sanitari, doccia, vasca — descrivi quelli visibili, vietato proporre modelli diversi.
-8. Vetri e specchi: sì/no e dove. Uno specchio non è un lavabo.
-9. Cosa è vincolo (geometria, nicchie, sanitari) e cosa è solo finitura modificabile.
+7. OGGETTI BLOCCATI — bagno, cucina o qualsiasi stanza: ogni oggetto visibile con forma e ingombro. Rubinetti, sanitari, ante, maniglie, elettrodomestici, cappa, lavello, doccia, vasca. Vietato proporre un modello diverso.
+8. Vetri e specchi: sì/no e dove. Uno specchio non è un lavabo. Un pensile non è un elettrodomestico.
+9. Cosa è vincolo (forma, misura, posizione, nicchie) e cosa è solo materiale o luce. Non inventare nulla che non si vede.
 ${mesh ? `DATI MESH (vincolanti). Stanza rilevata: ${mesh.suggestedRoom}. ${mesh.note || ''}
 PIANTA BLOCCATA:
 ${mesh.layoutLock || ''}
@@ -1644,7 +1650,39 @@ Scrivi in italiano: tipo stanza, quale parete ha la finestra, quale ha la porta,
       if (!mesh.wallGuess && wallHit) mesh.wallGuess = wallHit[1].replace(/\.$/, '').trim();
     }
 
+    let lockText = '';
+    try {
+      const seed = [
+        vision,
+        mesh?.layoutLock || '',
+        (mesh?.objects || []).slice(0, 40).map((o) => o.name).join(', ')
+      ].filter(Boolean).join('\n').slice(0, 7000);
+      if (seed.length > 80) {
+        const openai = getOpenAI();
+        const lockRes = await openai.chat.completions.create({
+          model: 'gpt-4o',
+          max_tokens: 1800,
+          messages: [{
+            role: 'user',
+            content: `Dal rilievo estrai SOLO ciò che c'è. Zero invenzioni. Vale per bagno, cucina, soggiorno, ufficio.
+Una riga per oggetto:
+OGGETTO | forma esatta | parete o zona | dimensione relativa (rispetto a finestra o mobile vicino) | materiale visto
+Poi:
+RIVESTIMENTO | quale parete | tutta altezza oppure mezza altezza con i cm oppure solo zoccolo oppure solo doccia
+NICCHIA | parete | altezza | misura | oppure NESSUNA
+Non sostituire rubinetti, ante, forni, WC, lavelli o docce con un altro modello.
+RILIEVO:
+${seed}`
+          }]
+        });
+        lockText = lockRes.choices?.[0]?.message?.content || '';
+      }
+    } catch (err) {
+      console.error('lock inventory', err.message);
+    }
+
     const analysis = [
+      lockText ? `INVENTARIO BLOCCATO — forme e posizioni intoccabili, si cambiano solo materiali e luce\n${lockText}\n` : '',
       mesh?.layoutLock ? `PIANTA E APERTURE BLOCCATE\n${mesh.layoutLock}\n` : '',
       modelBrief ? `DIRETTIVE UTENTE SUL 3D\n${modelBrief}\n` : '',
       vision,
@@ -1767,10 +1805,12 @@ router.post('/generate-render', async (req, res, next) => {
       } catch {}
     };
     await pushRef(sourceImage);
-    if (!sourceImage) await pushRef(planImage);
-    const extraRefs = Array.isArray(textureRefs) ? textureRefs : [];
-    for (const t of extraRefs.slice(0, 2)) {
-      await pushRef(typeof t === 'string' ? t : t.filename);
+    if (!sourceImage) {
+      await pushRef(planImage);
+      const extraRefs = Array.isArray(textureRefs) ? textureRefs : [];
+      for (const t of extraRefs.slice(0, 2)) {
+        await pushRef(typeof t === 'string' ? t : t.filename);
+      }
     }
 
     const room = String(roomType || '').trim();
@@ -1783,25 +1823,22 @@ router.post('/generate-render', async (req, res, next) => {
     const cladding = String(analysis).match(/RIVESTIMENTI[\s\S]{0,700}/i)?.[0]
       || String(analysis).match(/Pavimento[:\s][\s\S]{0,400}/i)?.[0]
       || '';
+    const inventory = String(analysis).match(/INVENTARIO BLOCCATO[\s\S]{0,1600}/i)?.[0] || '';
     const prompt = fromPhoto
-      ? `Photorealistic restyle of the FIRST image. It is the SketchUp model: geometry and objects are already correct.
-KEEP every fixture exactly as modeled. Do NOT replace taps, mixers, WC, bidet, basin, shower head, hand shower, tub or glass with a catalog version.
-If a recessed NICHE exists in a wall (soap niche in the shower), keep it recessed at the same height and size. Do not fill it in. Do not invent niches that are not in the image.
-CLADDING HEIGHT is mandatory:
-- If tiles stop at mid-wall (about 110-120 cm), keep that horizontal line. Paint only above it.
-- If tiles go floor-to-ceiling, keep full height. Do not cut them to half height.
-- If only the shower is tiled and other walls are paint, do not tile the whole room.
-- Floor finish stays on the floor only.
-${cladding ? `Survey of finishes:\n${cladding}\n` : ''}
-FLOOR (user, only if filled): ${floor || '(keep from photo)'}
-WALLS and cladding height (user, only if filled): ${wall || '(keep from photo, including half-height or full-height)'}
-${lock ? `Components already in the model — do not swap them:\n${lock}\n` : ''}
-${fx ? 'Named objects to keep, not replace: ' + fx : ''}
+      ? `MATERIAL AND LIGHT ONLY. The first image is the SketchUp model and is geometrically final.
+Do not move, resize, add or replace any object. Same camera. Same openings.
+Kitchen, bathroom or any room: cabinets, handles, appliances, hood, sink, taps, sanitary ware, shower, tub, niches keep the exact shape and count in the photo.
+Change surfaces and lighting only. Cladding height stays as in the photo (full height, half height, skirting, or shower-only).
+Recessed niches stay recessed. Do not fill them. Do not invent new ones.
+${inventory ? inventory + '\n' : ''}
+${cladding ? `Finishes:\n${cladding}\n` : ''}
+FLOOR only if the user wrote one: ${floor || '(keep the photo)'}
+WALLS only if the user wrote them: ${wall || '(keep the photo)'}
+${lock ? `Named parts already in the file:\n${lock}\n` : ''}
 ${modelBrief || ''}
-A round/oval disc on the wall is a MIRROR, not a second sink. Do not swap WC and bidet.
-No extra bottles, plants or toilet-paper holders unless they are in the first image.
-Extra images after the first are material samples only, not a new layout.
-Style: ${style || 'contemporary Italian interior'}. Photoreal, no SketchUp axes, no watermark, no people.`
+No extra bottles, plants or accessories that are not in the photo.
+No SketchUp axes, no text, no people, no watermark.
+Style: ${style || 'contemporary Italian interior'}.`
       : `Turn the first colored 3D massing into a photoreal room. Keep blocks in place.
 FLOOR: ${floor || ''}
 WALLS: ${wall || ''}
