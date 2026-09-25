@@ -760,6 +760,8 @@ document.getElementById('loginForm').onsubmit = async (e) => {
     document.getElementById('loginPage').style.display = 'none';
     document.getElementById('dashboardPage').style.display = 'block';
     loadStats(); loadClients(); loadArchive();
+    toggleRoomExtras();
+    toggleFinishDetails();
   } else {
     document.getElementById('loginError').textContent = data.error || 'Accesso non riuscito';
   }
@@ -1439,6 +1441,8 @@ if (token) {
   document.getElementById('dashboardPage').style.display = 'block';
   loadStats(); loadClients(); loadArchive();
 }
+toggleRoomExtras();
+toggleFinishDetails();
 </script>
 </body>
 </html>
