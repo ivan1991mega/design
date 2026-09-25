@@ -557,7 +557,7 @@ function parseObjSummary(text, mtlText, doorHint) {
   placed.forEach((a) => { a.rel = relWall(a.wall); });
 
   const lockLines = [
-    'PIANTA VINCOLANTE DAL MODELLO 3D. Vietato ruotare, specchiare, spostare aperture o arredi. Si possono cambiare solo materiali e finiture.',
+    'PIANTA VINCOLANTE DAL MODELLO 3D. Vietato ruotare, specchiare, spostare aperture o arredi. Anche i materiali restano quelli del modello. Si possono cambiare solo luce e riflessi.',
     `Stanza ${toHuman(size[0])} (X) × ${toHuman(size[2])} (Z) × h ${toHuman(size[1])}. Origine: angolo Xmin/Zmin a pavimento.`,
     win
       ? `FINESTRA: ${win.name} ${toHuman(win.width)} × h ${toHuman(win.height)}, davanzale ${toHuman(win.sill)}, a X=${toHuman(win.fromX)} sulla ${relWall(win.wall)}. Unica. Non spostarla.`
@@ -1603,7 +1603,7 @@ Elenca in italiano:
 6. NICCHIE: incavi a muro (doccia, saponi, mensole). Parete, altezza, misura. Se assenti: "nessuna nicchia".
 7. OGGETTI BLOCCATI — bagno, cucina o qualsiasi stanza: ogni oggetto visibile con forma e ingombro. Rubinetti, sanitari, ante, maniglie, elettrodomestici, cappa, lavello, doccia, vasca. Vietato proporre un modello diverso.
 8. Vetri e specchi: sì/no e dove. Uno specchio non è un lavabo. Un pensile non è un elettrodomestico.
-9. Cosa è vincolo (forma, misura, posizione, nicchie) e cosa è solo materiale o luce. Non inventare nulla che non si vede.
+9. Tutto è vincolo: forma, misura, posizione, nicchie e MATERIALI già nel modello (gres, legno, pittura, colore). L’unica cosa modificabile è luce e riflessi. Non inventare nulla che non si vede.
 ${mesh ? `DATI MESH (vincolanti). Stanza rilevata: ${mesh.suggestedRoom}. ${mesh.note || ''}
 PIANTA BLOCCATA:
 ${mesh.layoutLock || ''}
@@ -1682,7 +1682,7 @@ ${seed}`
     }
 
     const analysis = [
-      lockText ? `INVENTARIO BLOCCATO — forme e posizioni intoccabili, si cambiano solo materiali e luce\n${lockText}\n` : '',
+      lockText ? `INVENTARIO BLOCCATO — oggetti, forme e materiali intoccabili. Si cambiano solo luce e riflessi\n${lockText}\n` : '',
       mesh?.layoutLock ? `PIANTA E APERTURE BLOCCATE\n${mesh.layoutLock}\n` : '',
       modelBrief ? `DIRETTIVE UTENTE SUL 3D\n${modelBrief}\n` : '',
       vision,
@@ -1825,20 +1825,16 @@ router.post('/generate-render', async (req, res, next) => {
       || '';
     const inventory = String(analysis).match(/INVENTARIO BLOCCATO[\s\S]{0,1600}/i)?.[0] || '';
     const prompt = fromPhoto
-      ? `MATERIAL AND LIGHT ONLY. The first image is the SketchUp model and is geometrically final.
+      ? `LIGHT AND REFLECTIONS ONLY. The first image is the finished SketchUp model, including the client's materials.
+Do not change materials, colors, tiles, wood, paint, metal finishes, or cladding height.
 Do not move, resize, add or replace any object. Same camera. Same openings.
-Kitchen, bathroom or any room: cabinets, handles, appliances, hood, sink, taps, sanitary ware, shower, tub, niches keep the exact shape and count in the photo.
-Change surfaces and lighting only. Cladding height stays as in the photo (full height, half height, skirting, or shower-only).
-Recessed niches stay recessed. Do not fill them. Do not invent new ones.
+Kitchen, bathroom or any room: cabinets, handles, appliances, taps, sanitary ware, shower, tub and niches stay exactly as photographed, including their surfaces.
+You may only improve daylight, shadows and realistic reflections on glass, metal, water and polished stone.
 ${inventory ? inventory + '\n' : ''}
-${cladding ? `Finishes:\n${cladding}\n` : ''}
-FLOOR only if the user wrote one: ${floor || '(keep the photo)'}
-WALLS only if the user wrote them: ${wall || '(keep the photo)'}
 ${lock ? `Named parts already in the file:\n${lock}\n` : ''}
 ${modelBrief || ''}
 No extra bottles, plants or accessories that are not in the photo.
-No SketchUp axes, no text, no people, no watermark.
-Style: ${style || 'contemporary Italian interior'}.`
+No SketchUp axes, no text, no people, no watermark.`
       : `Turn the first colored 3D massing into a photoreal room. Keep blocks in place.
 FLOOR: ${floor || ''}
 WALLS: ${wall || ''}
