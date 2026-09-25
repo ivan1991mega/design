@@ -1559,15 +1559,18 @@ router.post('/analyze-image', analyzeUpload, async (req, res, next) => {
       const openai = getOpenAI();
       const skpHint = mesh?.format === 'skp'
         ? `\nQuesta è la VISTA SketchUp del file .skp. Fai un INVENTARIO vincolante, oggetto per oggetto.
-Per ogni elemento visibile: nome, posizione (parete ingresso / sinistra / destra / fondo / centro), quantità.
-Distingui con cura:
-- specchio tondo/ovale vs lavabo (uno specchio NON è un secondo lavandino)
-- vetro doccia/vasca: c'è? copre tutta la vasca o solo metà? Se c'è, va TENUTO
-- vasca: ci sono bocchette idromassaggio? se sì, tenerle
-- termoarredo / calorifero
-- WC, bidet, cassetta, porta o solo apertura nel muro
-VIETATO elencare cose non visibili: niente portarotolo, flaconi, piante, speaker se non si vedono.
-Conta i lavabi. Conta i sanitari. Questa lista sarà l'unica verità per il render.\n`
+Per ogni elemento visibile: nome, posizione, quantità. I componenti dello SKP sono VERI: non proporre sostituti di catalogo.
+OBBLIGATORIO su sanitari e accessori:
+- rubinetti/miscelatori: tipo (a parete, da piano, colonna), finitura (cromo, nero, ottone), posizione. NON sostituirli.
+- WC, bidet, lavabo, vasca, soffione, doccino: forma e posizione esatte dello SKP.
+- nicchie a muro: se c’è un incavo (saponi in doccia, mensola), scrivi NICCHIA: parete, altezza da terra, dimensioni circa, cosa contiene. Se non c’è, scrivi "nessuna nicchia".
+RIVESTIMENTI — per OGNI parete indica l’ALTEZZA, non solo il materiale:
+- tutta altezza (pavimento-soffitto)
+- mezza altezza (indica i cm, tipico 110-120)
+- solo zoccolo (10-15 cm)
+- solo dentro la doccia/box
+- fascia sotto finestra
+Se la linea di stacco si vede, segnala dove finisce la piastrella e inizia la pittura.\n`
         : '';
       const response = await openai.chat.completions.create({
         model: 'gpt-4o',
@@ -1587,13 +1590,14 @@ Elenca in italiano:
 2. INVENTARIO oggetti visibili (elenco puntato, posizione, quantità). Niente extra.
 3. Geometria: pianta, aperture (porte/finestre/vani) e dove stanno — un vano non è una porta
 4. Layout fisso: muri, divisori, nicchie
-5. RIVESTIMENTI — una riga per superficie, non unificare:
+5. RIVESTIMENTI — una riga per superficie, con ALTEZZA:
    - Pavimento: materiale, colore, formato
-   - Parete sinistra / destra / fondo / ingresso: piastrelle o pittura, colore
-   Se una parete è piastrellata e un’altra è liscia, dillo. Non scrivere “pareti beige” per tutte.
-6. Vetri, specchi, vasca/doccia, idromassaggio: sì/no e dove
-7. Cosa è vincolo e cosa è modificabile (solo finiture)
-8. Istruzioni per il render: stessa inquadratura, stessi oggetti, niente accessori inventati
+   - Ogni parete: materiale + tutta altezza / mezza altezza (cm) / solo zoccolo / solo doccia
+   Se la piastrella si ferma a metà muro, scrivi l’altezza dello stacco. Non unificare le pareti.
+6. NICCHIE: incavi a muro (doccia, saponi, mensole). Parete, altezza, misura. Se assenti: "nessuna nicchia".
+7. OGGETTI BLOCCATI dallo SKP: rubinetti, sanitari, doccia, vasca — descrivi quelli visibili, vietato proporre modelli diversi.
+8. Vetri e specchi: sì/no e dove. Uno specchio non è un lavabo.
+9. Cosa è vincolo (geometria, nicchie, sanitari) e cosa è solo finitura modificabile.
 ${mesh ? `DATI MESH (vincolanti). Stanza rilevata: ${mesh.suggestedRoom}. ${mesh.note || ''}
 PIANTA BLOCCATA:
 ${mesh.layoutLock || ''}
@@ -1780,23 +1784,23 @@ router.post('/generate-render', async (req, res, next) => {
       || String(analysis).match(/Pavimento[:\s][\s\S]{0,400}/i)?.[0]
       || '';
     const prompt = fromPhoto
-      ? `Photorealistic restyle of the FIRST image (SketchUp screenshot, possibly upscaled). This image is the ONLY layout.
-Keep camera, walls, window, door/openings, and every fixture in the same place and same count.
-Do not add objects. Do not swap WC and bidet. A round/oval wall disc is a MIRROR, not a sink.
-Keep tub glass only as in the photo (half-screen stays half). Keep hydromassage jets if visible.
-No toilet-paper holders, bottles, plants unless they are in the first image.
-
-CLADDING — copy from the first image, wall by wall:
-- Floor material stays on the floor only.
-- Tiled walls stay tiled with the same look; painted walls stay painted.
-- Do not make all walls the same plaster. Do not paint over tiles. Do not put the floor texture on the walls.
+      ? `Photorealistic restyle of the FIRST image. It is the SketchUp model: geometry and objects are already correct.
+KEEP every fixture exactly as modeled. Do NOT replace taps, mixers, WC, bidet, basin, shower head, hand shower, tub or glass with a catalog version.
+If a recessed NICHE exists in a wall (soap niche in the shower), keep it recessed at the same height and size. Do not fill it in. Do not invent niches that are not in the image.
+CLADDING HEIGHT is mandatory:
+- If tiles stop at mid-wall (about 110-120 cm), keep that horizontal line. Paint only above it.
+- If tiles go floor-to-ceiling, keep full height. Do not cut them to half height.
+- If only the shower is tiled and other walls are paint, do not tile the whole room.
+- Floor finish stays on the floor only.
 ${cladding ? `Survey of finishes:\n${cladding}\n` : ''}
-FLOOR (user): ${floor || '(keep from photo)'}
-WALLS (user): ${wall || '(keep from photo, per wall)'}
-${lock ? `Components:\n${lock}\n` : ''}
-${fx ? 'Named objects: ' + fx : ''}
+FLOOR (user, only if filled): ${floor || '(keep from photo)'}
+WALLS and cladding height (user, only if filled): ${wall || '(keep from photo, including half-height or full-height)'}
+${lock ? `Components already in the model — do not swap them:\n${lock}\n` : ''}
+${fx ? 'Named objects to keep, not replace: ' + fx : ''}
 ${modelBrief || ''}
-If extra reference images follow, they are MATERIAL SAMPLES only (floor/wall textures), not a new layout.
+A round/oval disc on the wall is a MIRROR, not a second sink. Do not swap WC and bidet.
+No extra bottles, plants or toilet-paper holders unless they are in the first image.
+Extra images after the first are material samples only, not a new layout.
 Style: ${style || 'contemporary Italian interior'}. Photoreal, no SketchUp axes, no watermark, no people.`
       : `Turn the first colored 3D massing into a photoreal room. Keep blocks in place.
 FLOOR: ${floor || ''}
@@ -1869,9 +1873,11 @@ router.post('/correct-render', async (req, res, next) => {
     const src = await localRenderPath(prev);
     if (!src) return res.status(404).json({ success: false, error: 'File del render non disponibile' });
 
-    const prompt = `This is the CURRENT finished render. Apply ONLY the user's corrections. Keep camera, room layout, and everything not mentioned.
+    const prompt = `This is the CURRENT finished render. Apply ONLY the user's corrections. Keep camera and everything not mentioned.
 User corrections (Italian): ${notes}
-Typical reminders: a wall opening is not a door leaf; keep basins centered as already composed unless told otherwise; add cladding only where asked.
+If they mention cladding height, move the tile stop line (mezza altezza ~120 cm, or tutta altezza to the ceiling).
+If they mention a niche, carve a real recess in that wall; do not paint a rectangle.
+Do not replace taps, WC, basin or shower unless they explicitly ask to change that object.
 Do not redesign. Photoreal, no text, no people, no watermark.`;
 
     const item = await generateInteriorImage(prompt, [src]);
@@ -2063,6 +2069,9 @@ Style: ${stylesText}
 Palette (names, RAL or hex): ${colorsText}
 FLOOR ONLY — do not put this finish on walls: ${floorFinish}${floorFile ? ' — match the catalog floor photo' : ''}
 WALLS ONLY — do not put this finish on the floor: ${wallFinish}${wallFile ? ' — match the catalog wall photo' : ''}
+Cladding height: if the brief or wall finish says mezza altezza / 120 cm, stop tiles there and paint above. If it says tutta altezza, tile floor to ceiling. If it says solo doccia, tile only the shower walls.
+Recessed wall niches (nicchia saponi) described by the user or the model must stay recessed, not a picture or a shelf stuck on the wall.
+Do NOT replace sanitary ware, taps or shower fittings already present in a provided 3D/plan image.
 CRITICAL MATERIAL SEPARATION: floor and walls must look different. Never use the same texture/colour on both.
 ${isBath ? 'THIS IS A BATHROOM: toilet/bidet, basin, shower or tub, bathroom taps. FORBIDDEN: bed, pillows, bedroom furniture.' : ''}
 ${fixturesText ? `Elements that MUST appear: ${fixturesText}` : ''}

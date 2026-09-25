@@ -188,10 +188,10 @@
           </div>
 
           <div class="section">
-            <label>Come lo immagini</label>
-            <textarea id="briefField" name="brief" placeholder="Scrivi o detta: isola al centro, spa con sauna, terrazzo con pranzo all’aperto…"></textarea>
+            <label>Come immagini lo spazio (questo testo viene usato nel render)</label>
+            <textarea id="briefField" name="brief" placeholder="Bagno 6,4 mq: doccia 90×120 con nicchia saponi 30×60 a 120 cm, gres 60×120 solo in doccia a tutta altezza, resto pareti pittura grigio pietra RAL 7030."></textarea>
             <button type="button" class="ghost mic" id="dictBtn" onclick="toggleDictation('briefField','dictBtn')">Detta</button>
-            <p class="hint" id="dictHint">Usa il microfono del telefono o del Mac. Serve Chrome o Safari e il permesso microfono.</p>
+            <p class="hint" id="dictHint">Scrivi la scena vera: misure, dove sta la nicchia, se il rivestimento è a mezza o tutta altezza. Il testo grigio è solo un esempio, non viene inviato.</p>
           </div>
 
           <div class="grid-2">
@@ -204,8 +204,8 @@
               </select>
             </div>
             <div class="section">
-              <label>Metri quadri esatti (facoltativo)</label>
-              <input name="sqm" type="number" min="3" step="0.1" placeholder="es. 12.5">
+              <label>Metri quadri della stanza (facoltativo, se li conosci)</label>
+              <input name="sqm" type="number" min="3" step="0.1" placeholder="6.4">
             </div>
           </div>
 
@@ -263,8 +263,8 @@
               <label class="chip"><input type="checkbox" name="color" value="malva dusty"> Malva dusty</label>
               <label class="chip"><input type="checkbox" name="color" value="grigio topo caldo"> Grigio topo</label>
             </div>
-            <input name="customColor" placeholder="es. eucalipto e argilla, RAL 7030">
-            <p class="hint">Tendenze 2026: terre, verdi, neutrals caldi. Il grigio freddo è fuori.</p>
+            <input name="customColor" placeholder="RAL 7030 grigio pietra sulle pareti fuori doccia">
+            <p class="hint">Colore vero che vuoi, con nome o RAL. Il testo grigio sparisce quando scrivi: non viene mandato da solo.</p>
           </div>
 
           <div class="grid-2">
@@ -298,6 +298,19 @@
               <input type="hidden" name="wallFinish" id="wallFinishHidden">
               <div class="file" style="margin-top:8px;"><input type="file" name="wallTexture" accept="image/*"></div>
               <p class="hint">Su boiserie vedi solo essenze e doghe, non lo spatolato.</p>
+              <label style="margin-top:10px;">Altezza del rivestimento</label>
+              <select name="claddingHeight" id="claddingHeight">
+                <option value="">Come nel modello / non specificata</option>
+                <option value="tutta altezza, dal pavimento al soffitto">Tutta altezza (pavimento–soffitto)</option>
+                <option value="mezza altezza circa 120 cm, sopra pittura">Mezza altezza (~120 cm, sopra pittura)</option>
+                <option value="solo dentro la doccia a tutta altezza, le altre pareti a pittura">Solo doccia a tutta altezza</option>
+                <option value="zoccolo basso 12 cm, resto pittura">Solo zoccolo (~12 cm)</option>
+                <option value="fascia sotto la finestra">Fascia sotto finestra</option>
+              </select>
+              <p class="hint">Dice fino a dove sale la piastrella. Mezza altezza ≈ 120 cm; tutta altezza arriva al soffitto.</p>
+              <label style="margin-top:10px;">Nicchie a muro</label>
+              <input name="nicheNote" id="nicheNote" placeholder="Nicchia saponi 30×60 nella parete doccia, a 120 cm da terra">
+              <p class="hint">Incavo vero nel muro, non una mensola appoggiata. Lascia vuoto se non c’è.</p>
             </div>
           </div>
 
@@ -412,7 +425,7 @@
           <h2 style="margin:16px 0 8px;">Correggi render</h2>
           <div class="section">
             <label>Cosa non va (una correzione alla volta)</label>
-            <textarea id="correctNotesConfig" placeholder="es. centra il lavabo · togli la porta, è un’apertura · rivestimento anche in zona lavabo"></textarea>
+            <textarea id="correctNotesConfig" placeholder="Il rivestimento in doccia deve arrivare al soffitto; fuori doccia fermalo a 120 cm"></textarea>
           </div>
           <button type="button" id="fixConfigBtn" onclick="correggiRender('correctNotesConfig')" style="width:100%;">Correggi questo render</button>
           <button type="button" id="downloadCurrentBtn" onclick="downloadCurrentView()">Download HQ</button>
@@ -479,20 +492,20 @@
           <img id="previewImg" class="preview">
         </div>
         <div class="section">
-          <label>Incolla i componenti SketchUp (se il file non parte)</label>
-          <textarea id="objectList" placeholder="Un nome per riga, es.&#10;Toilet&#10;Bidet&#10;Lavabo&#10;Box_doccia&#10;Pavimento_Bagno&#10;Parete"></textarea>
-          <p class="hint">Da SketchUp: Finestra → Struttura (Outliner), copia i nomi. Basta per capire che è un bagno.</p>
+          <label>Nomi componenti da non sostituire (uno per riga)</label>
+          <textarea id="objectList" placeholder="Miscelatore_parete_nero&#10;WC_sospeso&#10;Nicchia_doccia&#10;Soffione_tondo"></textarea>
+          <p class="hint">Copia i nomi dall’Outliner di SketchUp. Servono a non cambiare rubinetti, sanitari e doccia con modelli a caso.</p>
         </div>
         <div class="section">
-          <label>Porta (se non è nell'OBJ)</label>
-          <input id="doorHint" placeholder="es. stessa parete della doccia, 80 cm, a destra della doccia">
-          <p class="hint">Di default la porta sta sulla parete della doccia (ingresso). Scrivi qui solo se è su un'altra parete.</p>
+          <label>Porta — solo se manca nel modello</label>
+          <input id="doorHint" placeholder="Apertura 80 cm sulla parete di fronte alla finestra, senza anta">
+          <p class="hint">Lascia vuoto se la porta è già nello SKP. Non scrivere un esempio: verrebbe usato come posizione vera.</p>
         </div>
         <div class="section">
-          <label>Direttive sul modello 3D / SketchUp</label>
-          <textarea id="modelBrief" placeholder="Es. l’OBJ è il soggiorno in centimetri; ignora i layer di cantiere; tieni muri e finestre; sostituisci i cubi placeholder dei mobili; inquadratura dalla porta verso la finestra ovest."></textarea>
+          <label>Cosa dello SKP non deve cambiare</label>
+          <textarea id="modelBrief" placeholder="Tieni il miscelatore a parete nero, il WC sospeso e la nicchia in doccia. Non cambiare i sanitari."></textarea>
           <button type="button" class="ghost mic" id="modelDictBtn" onclick="toggleDictation('modelBrief','modelDictBtn')">Detta direttive</button>
-          <p class="hint">Cosa rispettare, cosa togliere, unità di misura, punto di vista. Vale per analisi e render.</p>
+          <p class="hint">Scrivi solo vincoli veri. Il testo grigio è un esempio e non viene inviato finché non lo sostituisci.</p>
         </div>
         <button type="button" id="analyzeBtn" onclick="analyzeImage()" style="margin-top:12px;width:100%;">Analizza (interpola e inventario)</button>
         <pre id="analysisBox" class="hint" style="white-space:pre-wrap;margin-top:12px;display:none;"></pre>
@@ -508,17 +521,25 @@
               <option value="altro">Altro</option>
             </select>
           </div>
-          <div class="section"><label>Pavimento (vincola il render — diverso dalle pareti)</label>
-            <input id="renderFloor" placeholder="es. gres effetto pietra greige">
+          <div class="section"><label>Pavimento — solo il piano di calpestio</label>
+            <input id="renderFloor" placeholder="Gres effetto pietra 60×60 grigio taupe, non uguale alle pareti">
+            <p class="hint">Materiale del pavimento. Non ripetere qui le pareti.</p>
           </div>
-          <div class="section"><label>Pareti (vincola il render — diverso dal pavimento)</label>
-            <input id="renderWall" placeholder="es. pittura ottanio opaca">
+          <div class="section"><label>Pareti — materiale e fino a che altezza</label>
+            <input id="renderWall" placeholder="Doccia: gres 60×120 a tutta altezza. Altre pareti: pittura sopra zoccolo 12 cm">
+            <p class="hint">Scrivi se è tutta altezza, mezza altezza (~120 cm) o solo in doccia.</p>
+          </div>
+          <div class="section"><label>Nicchie viste nel modello</label>
+            <input id="renderNiches" placeholder="Nicchia 30×60 nella parete doccia, a circa 120 cm, per i saponi">
+            <p class="hint">Incavo nel muro. Lascia vuoto se l’analisi non ne ha viste.</p>
           </div>
           <div class="section"><label>Stile</label><input id="renderStyle"></div>
           <div class="section"><label>Luce</label>
             <select id="renderLighting"><option>Naturale</option><option>Calda</option><option>Mista</option></select>
           </div>
-          <div class="section"><label>Colori (nomi liberi)</label><input id="renderColors" placeholder="ottanio, grigio topo"></div>
+          <div class="section"><label>Colori da applicare (nomi o RAL)</label><input id="renderColors" placeholder="RAL 7030 grigio pietra, bianco sanitari">
+            <p class="hint">Colori che vuoi nel render, non una lista generica.</p>
+          </div>
           <button type="button" id="generaBtn" onclick="generaRender()" style="width:100%;">Genera render da rilievo</button>
           <p class="hint">Dopo il render compare sotto la foto il tasto <b>Correggi questo render</b>.</p>
           <button type="button" class="ghost" onclick="applyAnalysisToConfig()" style="width:100%;margin-top:8px;">Porta stanza e finiture nel configuratore</button>
@@ -528,8 +549,8 @@
           <h2 style="margin:16px 0 8px;">Correggi render</h2>
           <div class="section">
             <label>Cosa non va (una correzione alla volta)</label>
-            <textarea id="correctNotes" placeholder="es. centra il lavabo sul mobile&#10;es. in basso è un’apertura nel muro, non una porta&#10;es. metti il rivestimento anche in zona lavabo"></textarea>
-            <p class="hint">Modifica solo questa foto. Una frase precisa.</p>
+            <textarea id="correctNotes" placeholder="Rimetti la nicchia saponi nella doccia a 120 cm e ferma il gres a mezza altezza sulle altre pareti"></textarea>
+            <p class="hint">Una correzione sola, su questa foto. Il testo grigio è un esempio e non viene inviato.</p>
           </div>
           <button type="button" id="fixRenderBtn" onclick="correggiRender()" style="width:100%;">Correggi questo render</button>
           <button onclick="downloadRender(window.lastPhotoRenderId, 'render-foto-HQ.png')" style="margin-top:12px;">Download HQ</button>
@@ -1006,6 +1027,10 @@ async function analyzeImage() {
     if (roomEl && s.roomType) roomEl.value = s.roomType;
     if (document.getElementById('renderFloor')) document.getElementById('renderFloor').value = s.floorGuess || '';
     if (document.getElementById('renderWall')) document.getElementById('renderWall').value = s.wallGuess || '';
+    if (document.getElementById('renderNiches') && /nicchia/i.test(currentAnalysis || '')) {
+      const m = (currentAnalysis || '').match(/nicchia[^\n]{0,120}/i);
+      if (m && !document.getElementById('renderNiches').value) document.getElementById('renderNiches').value = m[0];
+    }
     const note = document.getElementById('detectNote');
     if (note) {
       const bits = [];
@@ -1018,7 +1043,7 @@ async function analyzeImage() {
       note.textContent = bits.join(' · ') || 'Controlla pavimento e pareti prima di generare.';
     }
     if (s.roomType === 'bagno' && document.getElementById('modelBrief') && !document.getElementById('modelBrief').value) {
-      document.getElementById('modelBrief').value = 'È un bagno. Tieni sanitari, lavabo e doccia/vasca dove sono nel modello. Non fare una camera da letto.';
+      /* non precompilare: il placeholder è solo un esempio e non deve partire nel prompt */
     }
   } else alert(data.error || 'Errore analisi');
   });
@@ -1037,8 +1062,12 @@ async function generaRender() {
       sourceImage: currentSourceImage,
       modelBrief: (document.getElementById('modelBrief')?.value || '').trim(),
       roomType: document.getElementById('renderRoom')?.value || lastSuggested?.roomType,
-      floorFinish: document.getElementById('renderFloor')?.value || '',
-      wallFinish: document.getElementById('renderWall')?.value || '',
+      floorFinish: [document.getElementById('renderFloor')?.value || '', ''].filter(Boolean).join(''),
+      wallFinish: [
+        document.getElementById('renderWall')?.value || '',
+        document.getElementById('claddingHeight')?.value ? ('Altezza rivestimento: ' + document.getElementById('claddingHeight').value) : '',
+        document.getElementById('renderNiches')?.value ? ('Nicchie: ' + document.getElementById('renderNiches').value) : ''
+      ].filter(Boolean).join('. '),
       fixtures: lastSuggested?.fixtures || [],
       layoutLock: lastSuggested?.layoutLock || '',
       planImage: lastPlanImage,
@@ -1188,7 +1217,11 @@ async function submitConfig(e) {
     budget: fd.get('budget') || 'medio',
     lighting: fd.get('lighting') || 'mista',
     floorFinish: composedFinish(fd.get('floorFamily') || 'parquet', 'floor'),
-    wallFinish: composedFinish(fd.get('wallFamily') || 'pittura', 'wall'),
+    wallFinish: [
+      composedFinish(fd.get('wallFamily') || 'pittura', 'wall'),
+      fd.get('claddingHeight') ? ('Altezza rivestimento: ' + fd.get('claddingHeight')) : '',
+      fd.get('nicheNote') ? ('Nicchie a muro: ' + fd.get('nicheNote')) : ''
+    ].filter(Boolean).join('. '),
     customColor: fd.get('customColor') || '',
     styles: fd.getAll('style'),
     colors: fd.getAll('color'),
