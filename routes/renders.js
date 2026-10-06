@@ -32,6 +32,95 @@ async function putInGrid(filename, buffer) {
   return id;
 }
 
+function safeUploadName(name) {
+  if (!name || typeof name !== 'string') return null;
+  const base = path.basename(name);
+  if (!base || base === '.' || base === '..') return null;
+  return base;
+}
+
+async function unlinkUpload(name) {
+  const base = safeUploadName(name);
+  if (!base) return;
+  await fs.unlink(path.join(UPLOADS_DIR, base)).catch(() => {});
+}
+
+async function deleteGridFile(filename, gridFileId) {
+  try {
+    const bucket = gridBucket();
+    if (gridFileId) await bucket.delete(gridFileId).catch(() => {});
+    const base = safeUploadName(filename);
+    if (!base) return;
+    const files = await bucket.find({ filename: base }).toArray();
+    for (const f of files) await bucket.delete(f._id).catch(() => {});
+  } catch {}
+}
+
+function auxNamesFrom(render) {
+  const meta = render?.metadata && typeof render.metadata === 'object' ? render.metadata : {};
+  const names = [];
+  if (Array.isArray(meta.auxFiles)) names.push(...meta.auxFiles);
+  for (const key of ['sourceImage', 'planImage', 'plan2d']) {
+    if (meta[key]) names.push(meta[key]);
+  }
+  return names.map(safeUploadName).filter(Boolean);
+}
+
+async function purgeRenderStorage(render) {
+  if (!render) return;
+  await unlinkUpload(render.imageFile);
+  await deleteGridFile(render.imageFile, render.gridFileId);
+  for (const name of auxNamesFrom(render)) {
+    await unlinkUpload(name);
+    await deleteGridFile(name, null);
+  }
+}
+
+async function referencedUploadNames() {
+  const docs = await Render.find({}, { imageFile: 1, metadata: 1 }).lean();
+  const names = new Set();
+  for (const doc of docs) {
+    const image = safeUploadName(doc.imageFile);
+    if (image) names.add(image);
+    for (const name of auxNamesFrom(doc)) names.add(name);
+  }
+  return names;
+}
+
+async function sweepOrphanUploads(maxAgeMs = 60 * 60 * 1000) {
+  const referenced = await referencedUploadNames();
+  let removed = 0;
+  let entries = [];
+  try {
+    entries = await fs.readdir(UPLOADS_DIR);
+  } catch {
+    return { removed };
+  }
+  const now = Date.now();
+  for (const name of entries) {
+    const base = safeUploadName(name);
+    if (!base || referenced.has(base)) continue;
+    const full = path.join(UPLOADS_DIR, base);
+    try {
+      const stat = await fs.stat(full);
+      if (!stat.isFile()) continue;
+      if (now - stat.mtimeMs < maxAgeMs) continue;
+      await fs.unlink(full);
+      removed += 1;
+    } catch {}
+  }
+  try {
+    const bucket = gridBucket();
+    const files = await bucket.find({}).toArray();
+    for (const f of files) {
+      if (referenced.has(f.filename)) continue;
+      await bucket.delete(f._id).catch(() => {});
+      removed += 1;
+    }
+  } catch {}
+  return { removed };
+}
+
 function crc32(buf) {
   let c = ~0;
   for (let i = 0; i < buf.length; i++) {
@@ -1853,6 +1942,11 @@ Style: ${style || 'contemporary Italian interior'}. Photoreal, no text, no peopl
       imageUrl: savedPhoto.imageUrl,
       imageFile: savedPhoto.imageName,
       gridFileId: savedPhoto.gridFileId,
+      metadata: {
+        sourceImage: sourceImage || null,
+        planImage: planImage || null,
+        auxFiles: [sourceImage, planImage, ...(Array.isArray(textureRefs) ? textureRefs.map((t) => (typeof t === 'string' ? t : t?.filename)) : [])].filter(Boolean)
+      },
       style: style || 'contemporaneo',
       lighting: lighting || 'mista',
       colors: colors ? String(colors).split(',').map((c) => c.trim()).filter(Boolean) : [],
@@ -2178,23 +2272,25 @@ router.get('/configurations/:clientId', async (req, res, next) => {
   }
 });
 
+
+router.post('/cleanup', async (req, res, next) => {
+  try {
+    const swept = await sweepOrphanUploads(0);
+    res.json({ success: true, removed: swept.removed });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post('/bulk-delete', async (req, res, next) => {
   try {
     const ids = Array.isArray(req.body.ids) ? req.body.ids : [];
     if (!ids.length) return res.status(400).json({ success: false, error: 'Nessun render selezionato' });
     const docs = await Render.find({ _id: { $in: ids }, adminId: req.adminId });
-    for (const render of docs) {
-      if (render.imageFile) await fs.unlink(path.join(UPLOADS_DIR, render.imageFile)).catch(() => {});
-      if (render.imageFile) {
-        try {
-          const bucket = gridBucket();
-          const files = await bucket.find({ filename: render.imageFile }).toArray();
-          for (const f of files) await bucket.delete(f._id);
-        } catch {}
-      }
-    }
+    for (const render of docs) await purgeRenderStorage(render);
     await Render.deleteMany({ _id: { $in: docs.map((d) => d._id) }, adminId: req.adminId });
-    res.json({ success: true, deleted: docs.length });
+    const swept = await sweepOrphanUploads(0);
+    res.json({ success: true, deleted: docs.length, swept: swept.removed });
   } catch (error) {
     next(error);
   }
@@ -2229,9 +2325,7 @@ router.delete('/:id', async (req, res, next) => {
   try {
     const render = await Render.findOneAndDelete({ _id: req.params.id, adminId: req.adminId });
     if (!render) return res.status(404).json({ success: false, error: 'Render non trovato' });
-    if (render.imageFile) {
-      await fs.unlink(path.join(UPLOADS_DIR, render.imageFile)).catch(() => {});
-    }
+    await purgeRenderStorage(render);
     res.json({ success: true, message: 'Render cancellato' });
   } catch (error) {
     next(error);
