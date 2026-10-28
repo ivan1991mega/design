@@ -17,7 +17,8 @@ const RenderSchema = new mongoose.Schema({
   displayOrder: { type: Number, default: 0 },
   isVisible: { type: Boolean, default: true },
   views: { type: Number, default: 0 },
-  metadata: mongoose.Schema.Types.Mixed
+  metadata: mongoose.Schema.Types.Mixed,
+  expiresAt: { type: Date, index: true }
 }, { timestamps: true });
 
 RenderSchema.index({ adminId: 1, createdAt: -1 });
