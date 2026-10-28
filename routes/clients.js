@@ -23,10 +23,27 @@ router.get('/', async (req, res, next) => {
       ];
     }
 
-    const [clients, total] = await Promise.all([
-      Client.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit),
-      Client.countDocuments(query)
+    const clients = await Client.aggregate([
+      { $match: query },
+      { $sort: { createdAt: -1 } },
+      { $skip: skip },
+      { $limit: limit },
+      {
+        $lookup: {
+          from: 'renders',
+          localField: '_id',
+          foreignField: 'clientId',
+          as: 'renders'
+        }
+      },
+      {
+        $addFields: {
+          renderCount: { $size: '$renders' }
+        }
+      },
+      { $project: { renders: 0 } }
     ]);
+    const total = await Client.countDocuments(query);
 
     res.json({
       success: true,
