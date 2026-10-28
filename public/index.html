@@ -536,6 +536,12 @@
             <input id="renderNiches" placeholder="Nicchia 30×60 nella parete doccia, a circa 120 cm, per i saponi">
             <p class="hint">Incavo nel muro. Lascia vuoto se l’analisi non ne ha viste.</p>
           </div>
+
+          <div class="section" id="roomProductsSection" style="display:none;">
+            <label>Prodotti / materiali specifici (facoltativo)</label>
+            <p class="hint" style="margin-bottom:10px;">Inserisci i modelli reali che hai su SketchUp. Lascia vuoto se non serve.</p>
+            <div id="roomProductsFields"></div>
+          </div>
           <div class="section"><label>Stile</label><input id="renderStyle"></div>
           <div class="section"><label>Luce</label>
             <select id="renderLighting">
@@ -1173,7 +1179,7 @@ async function analyzeImage() {
     }
     const s = lastSuggested || {};
     const roomEl = document.getElementById('renderRoom');
-    if (roomEl && s.roomType) roomEl.value = s.roomType;
+    if (roomEl && s.roomType) roomEl.value = s.roomType;\n    updateRoomProducts();
     if (document.getElementById('renderFloor')) document.getElementById('renderFloor').value = s.floorGuess || '';
     if (document.getElementById('renderWall')) document.getElementById('renderWall').value = s.wallGuess || '';
     if (document.getElementById('renderNiches') && /nicchia/i.test(currentAnalysis || '')) {
@@ -1219,6 +1225,7 @@ async function generaRender() {
       ].filter(Boolean).join('. '),
       fixtures: lastSuggested?.fixtures || [],
       layoutLock: lastSuggested?.layoutLock || '',
+      products: collectRoomProducts(),
       planImage: lastPlanImage,
       textureRefs: lastTextureRefs,
       style: document.getElementById('renderStyle').value,
@@ -1591,6 +1598,73 @@ if (token) {
 }
 toggleRoomExtras();
 toggleFinishDetails();
-</script>
+
+
+function collectRoomProducts() {
+  const inputs = document.querySelectorAll('#roomProductsFields input');
+  const out = {};
+  inputs.forEach(inp => {
+    const id = inp.id.replace('prod_', '');
+    const val = (inp.value || '').trim();
+    if (val) out[id] = val;
+  });
+  return out;
+}
+\nfunction updateRoomProducts() {
+  const room = document.getElementById('renderRoom')?.value || '';
+  const container = document.getElementById('roomProductsFields');
+  const section = document.getElementById('roomProductsSection');
+  if (!container || !section) return;
+
+  const fields = {
+    bagno: [
+      ['rubinetti', 'Rubinetti / miscelatori', 'es. Flaminia, Hansgrohe Focus, cromo spazzolato'],
+      ['doccia', 'Doccia / box', 'es. walk-in cristallo 8mm, piatto doccia 90x120'],
+      ['specchio', 'Specchio', 'es. specchio LED retroilluminato 60x80'],
+      ['lavabo', 'Lavabo / lavandino', 'es. sospeso ceramica bianca, appoggio'],
+      ['sanitari', 'Sanitari (WC / bidet)', 'es. sospesi, cassetta a incasso'],
+      ['piastrelle', 'Piastrelle / rivestimenti', 'es. gres 60x120 effetto marmo a tutta altezza in doccia']
+    ],
+    cucina: [
+      ['piano_cottura', 'Piano cottura', 'es. induzione 60cm nero'],
+      ['cappa', 'Cappa', 'es. isola sospesa, a parete inox'],
+      ['lavello', 'Lavello', 'es. sottopiano acciaio, 1 vasca'],
+      ['rubinetti', 'Rubinetti cucina', 'es. miscelatore alto cromo'],
+      ['elettrodomestici', 'Elettrodomestici', 'es. forno a colonna, frigo side-by-side'],
+      ['top', 'Top / piano lavoro', 'es. quarzo bianco, laminato effetto legno']
+    ],
+    salotto: [
+      ['divano', 'Divano', 'es. 3 posti tessuto grigio'],
+      ['tavolo', 'Tavolo', 'es. rovere naturale 180cm'],
+      ['illuminazione', 'Illuminazione', 'es. lampada a sospensione, piantana']
+    ],
+    camera: [
+      ['letto', 'Letto', 'es. matrimoniale con testata imbottita'],
+      ['comodini', 'Comodini', 'es. sospesi noce'],
+      ['armadio', 'Armadio / cabina', 'es. ante a battente laccato']
+    ]
+  };
+
+  const list = fields[room] || [];
+  if (!list.length) {
+    section.style.display = 'none';
+    container.innerHTML = '';
+    return;
+  }
+
+  section.style.display = 'block';
+  container.innerHTML = list.map(([id, label, ph]) => `
+    <div style="margin-bottom:10px;">
+      <label style="font-size:13px;">${label}</label>
+      <input id="prod_${id}" placeholder="${ph}" style="margin-top:4px;">
+    </div>
+  `).join('');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const sel = document.getElementById('renderRoom');
+  if (sel) sel.addEventListener('change', updateRoomProducts);
+});
+\n</script>
 </body>
 </html>
