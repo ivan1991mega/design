@@ -274,6 +274,8 @@
                 <option value="parquet">Parquet / legno</option>
                 <option value="gres">Gres / ceramica</option>
                 <option value="microcemento">Microcemento</option>
+                <option value="marmo">Marmo</option>
+                <option value="cemento">Cemento / resina</option>
                 <option value="cotto">Cotto / terracotta</option>
                 <option value="esterno">Esterno (deck, pietra, erba)</option>
               </select>
@@ -678,32 +680,154 @@ function toggleRoomExtras() {
 
 const FLOOR_OPTS = {
   parquet: {
-    trama: [['listoni larghi XXL','Listoni XXL'],['spina ungherese','Spina ungherese'],['spazzolato oliato','Spazzolato oliato'],['piallato a mano','Piallato']],
-    colore: [['noce canaletto','Noce canaletto'],['rovere naturale','Rovere naturale'],['rovere fume','Rovere fumé'],['rovere sbiancato','Rovere sbiancato'],['teak','Teak']]
+    trama: [
+      ['listoni larghi XXL','Listoni XXL'],
+      ['spina ungherese','Spina ungherese'],
+      ['chevron','Chevron'],
+      ['spazzolato oliato','Spazzolato oliato'],
+      ['piallato a mano','Piallato a mano'],
+      ['listelli stretti','Listelli stretti'],
+      ['maxi listoni','Maxi listoni'],
+      ['spazzolato grezzo','Spazzolato grezzo'],
+      ['effetto antico','Effetto antico']
+    ],
+    colore: [
+      ['noce canaletto','Noce canaletto'],
+      ['rovere naturale','Rovere naturale'],
+      ['rovere fume','Rovere fumé'],
+      ['rovere sbiancato','Rovere sbiancato'],
+      ['rovere grigio','Rovere grigio'],
+      ['teak','Teak'],
+      ['wenge','Wenge'],
+      ['rovere chiaro','Rovere chiaro'],
+      ['noce americano','Noce americano'],
+      ['castagno','Castagno']
+    ]
   },
   gres: {
-    trama: [['effetto pietra naturale','Effetto pietra'],['effetto travertino','Travertino'],['effetto cemento','Cemento'],['effetto marmo','Marmo'],['effetto legno','Effetto legno'],['effetto argilla','Argilla']],
-    colore: [['sabbia calda','Sabbia'],['greige','Greige'],['calacatta','Calacatta'],['ardesia','Ardesia'],['terracotta','Terracotta'],['antracite caldo','Antracite']]
+    trama: [
+      ['effetto pietra naturale','Effetto pietra'],
+      ['effetto travertino','Travertino'],
+      ['effetto cemento','Cemento'],
+      ['effetto marmo','Marmo'],
+      ['effetto legno','Effetto legno'],
+      ['effetto argilla','Argilla'],
+      ['60x60','60x60'],
+      ['60x120','60x120'],
+      ['120x120','120x120'],
+      ['80x80','80x80'],
+      ['bookmatch','Bookmatch'],
+      ['effetto cotto','Effetto cotto'],
+      ['effetto pietra spaccata','Pietra spaccata']
+    ],
+    colore: [
+      ['sabbia calda','Sabbia'],
+      ['greige','Greige'],
+      ['calacatta','Calacatta'],
+      ['ardesia','Ardesia'],
+      ['terracotta','Terracotta'],
+      ['antracite caldo','Antracite'],
+      ['bianco statuario','Bianco statuario'],
+      ['nero marquina','Nero marquina'],
+      ['grigio perla','Grigio perla'],
+      ['beige caldo','Beige caldo'],
+      ['tortora','Tortora']
+    ]
   },
   microcemento: {
-    trama: [['spatolato continuo','Spatolato'],['nuvolato','Nuvolato'],['liscio opaco','Liscio opaco']],
-    colore: [['sabbia','Sabbia'],['greige','Greige'],['cemento caldo','Cemento caldo'],['tortora','Tortora']]
+    trama: [
+      ['spatolato continuo','Spatolato'],
+      ['nuvolato','Nuvolato'],
+      ['liscio opaco','Liscio opaco'],
+      ['materico','Materico'],
+      ['effetto cemento a vista','Cemento a vista'],
+      ['spatolato fine','Spatolato fine']
+    ],
+    colore: [
+      ['sabbia','Sabbia'],
+      ['greige','Greige'],
+      ['cemento caldo','Cemento caldo'],
+      ['tortora','Tortora'],
+      ['grigio chiaro','Grigio chiaro'],
+      ['antracite','Antracite'],
+      ['bianco caldo','Bianco caldo']
+    ]
   },
   marmo: {
-    trama: [['levigato lucido','Levigato'],['spazzolato','Spazzolato'],['bookmatch','Bookmatch'],['lastre grandi','Lastre grandi']],
-    colore: [['calacatta','Calacatta'],['statuario','Statuario'],['nero marquina','Nero marquina'],['travertino','Travertino']]
+    trama: [
+      ['levigato lucido','Levigato lucido'],
+      ['spazzolato','Spazzolato'],
+      ['bookmatch','Bookmatch'],
+      ['lastre grandi','Lastre grandi'],
+      ['effetto anticato','Anticato'],
+      ['levigato opaco','Levigato opaco']
+    ],
+    colore: [
+      ['calacatta','Calacatta'],
+      ['statuario','Statuario'],
+      ['nero marquina','Nero marquina'],
+      ['travertino','Travertino'],
+      ['verde alpi','Verde alpi'],
+      ['rosa portogallo','Rosa portogallo'],
+      ['bianco carrara','Bianco Carrara'],
+      ['emperador','Emperador']
+    ]
   },
   cemento: {
-    trama: [['microcemento spatolato','Microcemento'],['cemento a vista','A vista'],['resina liscia','Resina']],
-    colore: [['grigio chiaro','Grigio chiaro'],['tortora','Tortora'],['antracite','Antracite'],['sabbia','Sabbia']]
+    trama: [
+      ['microcemento spatolato','Microcemento'],
+      ['cemento a vista','A vista'],
+      ['resina liscia','Resina liscia'],
+      ['resina opaca','Resina opaca'],
+      ['effetto industriale','Industriale'],
+      ['spatolato continuo','Spatolato continuo']
+    ],
+    colore: [
+      ['grigio chiaro','Grigio chiaro'],
+      ['tortora','Tortora'],
+      ['antracite','Antracite'],
+      ['sabbia','Sabbia'],
+      ['cemento caldo','Cemento caldo'],
+      ['grigio medio','Grigio medio'],
+      ['bianco sporco','Bianco sporco']
+    ]
   },
   cotto: {
-    trama: [['fatto a mano toscano','Fatto a mano'],['smaltato irregolare','Smaltato'],['cotto rustico','Rustico']],
-    colore: [['rosso cotto','Rosso cotto'],['rosa antico','Rosa antico'],['ocra','Ocra']]
+    trama: [
+      ['fatto a mano toscano','Fatto a mano'],
+      ['smaltato irregolare','Smaltato'],
+      ['cotto rustico','Rustico'],
+      ['cotto levigato','Levigato'],
+      ['effetto antico','Antico'],
+      ['formato irregolare','Irregolare']
+    ],
+    colore: [
+      ['rosso cotto','Rosso cotto'],
+      ['rosa antico','Rosa antico'],
+      ['ocra','Ocra'],
+      ['terracotta scura','Terracotta scura'],
+      ['beige cotto','Beige cotto'],
+      ['marrone caldo','Marrone caldo']
+    ]
   },
   esterno: {
-    trama: [['decking legno','Decking'],['gres antiscivolo','Gres esterno'],['pietra naturale','Pietra'],['erba e camminamenti','Erba + pietra']],
-    colore: [['teak','Teak'],['pietra chiara','Pietra chiara'],['basalto','Basalto']]
+    trama: [
+      ['decking legno','Decking'],
+      ['gres antiscivolo','Gres esterno'],
+      ['pietra naturale','Pietra'],
+      ['erba e camminamenti','Erba + pietra'],
+      ['gres effetto legno','Gres effetto legno'],
+      ['pietra a spacco','Pietra a spacco'],
+      ['decking composito','Decking composito']
+    ],
+    colore: [
+      ['teak','Teak'],
+      ['pietra chiara','Pietra chiara'],
+      ['basalto','Basalto'],
+      ['grigio','Grigio'],
+      ['sabbia','Sabbia'],
+      ['antracite','Antracite']
+    ]
   }
 };
 
