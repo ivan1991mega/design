@@ -1602,12 +1602,15 @@ toggleFinishDetails();
 
 
 function collectRoomProducts() {
-  const inputs = document.querySelectorAll('#roomProductsFields input');
-  const out = {};
-  inputs.forEach(inp => {
+  const out = { texts: {}, files: {} };
+  document.querySelectorAll('#roomProductsFields input[id^="prod_"]').forEach(inp => {
     const id = inp.id.replace('prod_', '');
     const val = (inp.value || '').trim();
-    if (val) out[id] = val;
+    if (val) out.texts[id] = val;
+  });
+  document.querySelectorAll('#roomProductsFields input[id^="prodfile_"]').forEach(inp => {
+    const id = inp.id.replace('prodfile_', '');
+    if (inp.files && inp.files[0]) out.files[id] = inp.files[0].name;
   });
   return out;
 }
@@ -1656,9 +1659,13 @@ function updateRoomProducts() {
 
   section.style.display = 'block';
   container.innerHTML = list.map(([id, label, ph]) => `
-    <div style="margin-bottom:10px;">
+    <div style="margin-bottom:14px; padding-bottom:10px; border-bottom:1px solid var(--line);">
       <label style="font-size:13px;">${label}</label>
       <input id="prod_${id}" placeholder="${ph}" style="margin-top:4px;">
+      <div class="file" style="margin-top:6px;">
+        <input type="file" id="prodfile_${id}" accept="image/*" style="font-size:12px;">
+      </div>
+      <p class="hint" style="margin-top:4px;">Facoltativo: carica la foto del prodotto reale. Se la metti, il render userà proprio quello.</p>
     </div>
   `).join('');
 }
