@@ -1179,7 +1179,8 @@ async function analyzeImage() {
     }
     const s = lastSuggested || {};
     const roomEl = document.getElementById('renderRoom');
-    if (roomEl && s.roomType) roomEl.value = s.roomType;\n    updateRoomProducts();
+    if (roomEl && s.roomType) roomEl.value = s.roomType;
+    updateRoomProducts();
     if (document.getElementById('renderFloor')) document.getElementById('renderFloor').value = s.floorGuess || '';
     if (document.getElementById('renderWall')) document.getElementById('renderWall').value = s.wallGuess || '';
     if (document.getElementById('renderNiches') && /nicchia/i.test(currentAnalysis || '')) {
@@ -1610,7 +1611,8 @@ function collectRoomProducts() {
   });
   return out;
 }
-\nfunction updateRoomProducts() {
+
+function updateRoomProducts() {
   const room = document.getElementById('renderRoom')?.value || '';
   const container = document.getElementById('roomProductsFields');
   const section = document.getElementById('roomProductsSection');
@@ -1665,6 +1667,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const sel = document.getElementById('renderRoom');
   if (sel) sel.addEventListener('change', updateRoomProducts);
 });
-\n</script>
+
+</script>
 </body>
 </html>
