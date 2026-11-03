@@ -1947,8 +1947,9 @@ Highly detailed physically-based materials: accurate specular reflections and Fr
 Clean, sharp from edge to edge, no vignette, no darkened corners, no CGI plastic look, no over-sharpening.`;
 
     const prompt = fromPhoto
-      ? `ABSOLUTE SKETCHUP LOCK — NOTHING MAY BE CHANGED.
-The first image is the finished SketchUp model and is the only source of truth for EVERYTHING.
+      ? `ABSOLUTE VIEW AND OBJECT LOCK.
+The first image is the finished SketchUp model. You MUST reproduce the EXACT SAME CAMERA ANGLE, EXACT SAME COMPOSITION, EXACT SAME FRAMING and EXACT SAME PERSPECTIVE as the input image.
+Do NOT change the viewpoint, do NOT switch from top-down to eye-level or vice-versa, do NOT rotate the room, do NOT zoom differently.
 CRITICAL RULES (must be followed exactly, no exceptions):
 - Keep EVERY object exactly as detected: same shape, same size, same position, same rotation, same color, same material, same roughness (matte/glossy), same cladding height.
 - Do NOT add, remove, replace, move, resize, rotate, recolor or invent any object, opening, door, window, niche, fixture or surface.
@@ -1960,7 +1961,7 @@ ${lock ? `LOCKED PARTS FROM SKETCHUP (must stay exactly as listed, nothing else,
 ${modelBrief || ''}
 ${realismBoost}
 ${personBlock}
-No SketchUp axes, no text, no watermark. Full frame photorealistic, sharp details from edge to edge, high resolution throughout.`
+Same exact view as input. No SketchUp axes, no text, no watermark. Full frame photorealistic, sharp details from edge to edge, high resolution throughout.`
       : `ABSOLUTE SKETCHUP LOCK. Turn the 3D massing into a photoreal room while keeping every block and object in the exact same position, shape, color and material.
 Do NOT invent, add, remove or replace any object or opening.
 Do NOT invent doors or windows.
