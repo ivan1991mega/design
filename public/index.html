@@ -280,6 +280,14 @@
                 <option value="esterno">Esterno (deck, pietra, erba)</option>
               </select>
               <div id="floorDetails"></div>
+              <label style="margin-top:10px;">Finitura pavimento (rugosità)</label>
+              <select name="floorGloss" id="floorGloss">
+                <option value="opaco" selected>Opaco / matte (bassa riflessione)</option>
+                <option value="satinato">Satinato (riflessi morbidi)</option>
+                <option value="lucido">Lucido / glossy (riflessi netti e forti)</option>
+              </select>
+              <p class="hint">Opaco = poca luce riflessa. Lucido = riflessi evidenti sullo specchio e sulla superficie.</p>
+
               <input type="hidden" name="floorFinish" id="floorFinishHidden">
               <div class="file" style="margin-top:8px;"><input type="file" name="floorTexture" accept="image/*"></div>
               <p class="hint">Trama e colore cambiano in base al materiale. Foto catalogo facoltativa.</p>
@@ -297,6 +305,13 @@
                 <option value="mattone">Mattone</option>
               </select>
               <div id="wallDetails"></div>
+              <label style="margin-top:10px;">Finitura pareti (rugosità)</label>
+              <select name="wallGloss" id="wallGloss">
+                <option value="opaco" selected>Opaco / matte</option>
+                <option value="satinato">Satinato</option>
+                <option value="lucido">Lucido / glossy</option>
+              </select>
+
               <input type="hidden" name="wallFinish" id="wallFinishHidden">
               <div class="file" style="margin-top:8px;"><input type="file" name="wallTexture" accept="image/*"></div>
               <p class="hint">Su boiserie vedi solo essenze e doghe, non lo spatolato.</p>
@@ -560,6 +575,13 @@
           </div>
           <div class="section"><label>Colori da applicare (nomi o RAL)</label><input id="renderColors" placeholder="RAL 7030 grigio pietra, bianco sanitari">
             <p class="hint">Colori che vuoi nel render, non una lista generica.</p>
+          </div>
+          <div class="section">
+            <label class="chip">
+              <input type="checkbox" id="addPerson" value="1">
+              Aggiungi persona realistica che interagisce con la stanza
+            </label>
+            <p class="hint">Es. si lava le mani in bagno, cucina, si siede sul divano, usa la doccia. Scala e luce coerenti. Non inventa altri oggetti.</p>
           </div>
           <button type="button" id="generaBtn" onclick="generaRender()" style="width:100%;">Genera render da rilievo</button>
           <p class="hint">Dopo il render compare sotto la foto il tasto <b>Correggi questo render</b>.</p>
@@ -1231,7 +1253,8 @@ async function generaRender() {
       textureRefs: lastTextureRefs,
       style: document.getElementById('renderStyle').value,
       lighting: document.getElementById('renderLighting').value,
-      colors: document.getElementById('renderColors').value
+      colors: document.getElementById('renderColors').value,
+      addPerson: document.getElementById('addPerson')?.checked || false
     })
   });
   const data = await res.json();
@@ -1375,6 +1398,8 @@ async function submitConfig(e) {
     budget: fd.get('budget') || 'medio',
     lighting: fd.get('lighting') || 'mista',
     floorFinish: composedFinish(fd.get('floorFamily') || 'parquet', 'floor'),
+    floorGloss: fd.get('floorGloss') || 'opaco',
+    wallGloss: fd.get('wallGloss') || 'opaco',
     wallFinish: [
       composedFinish(fd.get('wallFamily') || 'pittura', 'wall'),
       fd.get('claddingHeight') ? ('Altezza rivestimento: ' + fd.get('claddingHeight')) : '',
