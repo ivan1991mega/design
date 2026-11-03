@@ -1947,22 +1947,26 @@ Highly detailed physically-based materials: accurate specular reflections and Fr
 Clean, sharp from edge to edge, no vignette, no darkened corners, no CGI plastic look, no over-sharpening.`;
 
     const prompt = fromPhoto
-      ? `STRICT OBJECT LOCK. The first image is the finished SketchUp model.
-You MUST keep every object exactly as it is: same furniture, same sanitary ware, same taps, same shower, same niches, same windows, same doors, same mirrors.
-Do NOT add, remove, replace, move, resize or invent any object.
-Do NOT change materials, colors, tiles, wood, paint or metal finishes. Keep the exact roughness (matte vs glossy) of every surface as in the original model.
-You may ONLY improve daylight, shadows and realistic reflections on glass, metal, water and polished stone.
+      ? `ABSOLUTE SKETCHUP LOCK — NOTHING MAY BE CHANGED.
+The first image is the finished SketchUp model and is the only source of truth for EVERYTHING.
+CRITICAL RULES (must be followed exactly, no exceptions):
+- Keep EVERY object exactly as detected: same shape, same size, same position, same rotation, same color, same material, same roughness (matte/glossy), same cladding height.
+- Do NOT add, remove, replace, move, resize, rotate, recolor or invent any object, opening, door, window, niche, fixture or surface.
+- Do NOT invent doors, windows, niches, furniture or any element that is not clearly present in the SketchUp model or analysis.
+- Cladding and tiles stay exactly as in the model (height, material, color). If tiles stop at half-height or only inside the shower, keep it that way.
+- You may ONLY improve daylight, soft realistic shadows and realistic reflections on glass, metal, water and polished stone. Nothing else.
 ${inventory ? inventory + '\n' : ''}
-${lock ? `Named parts already in the file (must stay exactly as listed):\n${lock}\n` : ''}
+${lock ? `LOCKED PARTS FROM SKETCHUP (must stay exactly as listed, nothing else, nothing moved):\n${lock}\n` : ''}
 ${modelBrief || ''}
 ${realismBoost}
 ${personBlock}
 No SketchUp axes, no text, no watermark. Full frame photorealistic, sharp details from edge to edge, high resolution throughout.`
-      : `STRICT OBJECT LOCK. Turn the 3D massing into a photoreal room while keeping every block and object in the exact same position.
-Do NOT invent, add or replace any object.
+      : `ABSOLUTE SKETCHUP LOCK. Turn the 3D massing into a photoreal room while keeping every block and object in the exact same position, shape, color and material.
+Do NOT invent, add, remove or replace any object or opening.
+Do NOT invent doors or windows.
 FLOOR: ${floor || ''}
 WALLS: ${wall || ''}
-${lock ? `Survey (must be respected exactly):\n${lock}\n` : ''}
+${lock ? `LOCKED SURVEY (must be respected exactly, no inventions):\n${lock}\n` : ''}
 ${modelBrief || ''}
 Style: ${style || 'contemporary Italian interior'}.
 ${realismBoost}
