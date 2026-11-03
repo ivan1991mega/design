@@ -1935,7 +1935,10 @@ router.post('/generate-render', async (req, res, next) => {
     const addPerson = req.body.addPerson === true || req.body.addPerson === '1' || req.body.addPerson === 'true';
 
     const personBlock = addPerson
-      ? `Include ONE realistic person (average European appearance, natural everyday clothing) performing a natural action appropriate to the room (washing hands at the sink in a bathroom, cooking in a kitchen, sitting on the sofa in a living room, using the shower, etc.). Correct scale, realistic skin with subtle subsurface scattering, natural pose, soft integration with the lighting. Do not add extra people or objects.`
+      ? `Include ONE realistic person (average European appearance, natural everyday clothing) performing a natural action appropriate to the room (washing hands at the sink in a bathroom, cooking in a kitchen, sitting on the sofa in a living room, using the shower, etc.).
+CRITICAL: The person MUST cast soft realistic shadows on the floor and nearby surfaces, matching the existing lighting.
+CRITICAL: The person MUST appear in reflections on mirrors, glass shower panels, polished metal and any glossy surfaces, with correct perspective and lighting.
+Correct scale, realistic skin with subtle subsurface scattering, natural pose, soft integration with the lighting. Do not add extra people or objects.`
       : `No people.`;
 
     const realismBoost = `
@@ -1947,7 +1950,7 @@ Clean, sharp from edge to edge, no vignette, no darkened corners, no CGI plastic
       ? `STRICT OBJECT LOCK. The first image is the finished SketchUp model.
 You MUST keep every object exactly as it is: same furniture, same sanitary ware, same taps, same shower, same niches, same windows, same doors, same mirrors.
 Do NOT add, remove, replace, move, resize or invent any object.
-Do NOT change materials, colors, tiles, wood, paint or metal finishes.
+Do NOT change materials, colors, tiles, wood, paint or metal finishes. Keep the exact roughness (matte vs glossy) of every surface as in the original model.
 You may ONLY improve daylight, shadows and realistic reflections on glass, metal, water and polished stone.
 ${inventory ? inventory + '\n' : ''}
 ${lock ? `Named parts already in the file (must stay exactly as listed):\n${lock}\n` : ''}
