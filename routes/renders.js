@@ -1936,6 +1936,9 @@ router.post('/generate-render', async (req, res, next) => {
 
     const personBlock = addPerson
       ? `Include ONE realistic person (average European appearance, natural everyday clothing) performing a natural action appropriate to the room (washing hands at the sink in a bathroom, cooking in a kitchen, sitting on the sofa in a living room, using the shower, etc.).
+CRITICAL: The person is ONLY an addition. Do NOT move, hide, resize, recolor or remove any existing object, fitting, hole, cladding or surface because of the person.
+CRITICAL: Shower fittings, holes, brackets and glass supports must stay exactly in their original positions (do not move them up or elsewhere).
+CRITICAL: Cladding height stays exactly as in the SketchUp model (half-height remains half-height, full-height remains full-height).
 CRITICAL: The person MUST cast soft realistic shadows on the floor and nearby surfaces, matching the existing lighting.
 CRITICAL: The person MUST appear in reflections on mirrors, glass shower panels, polished metal and any glossy surfaces, with correct perspective and lighting.
 Correct scale, realistic skin with subtle subsurface scattering, natural pose, soft integration with the lighting. Do not add extra people or objects.`
@@ -1955,7 +1958,7 @@ CRITICAL RULES (must be followed exactly, no exceptions):
 - Do NOT reinterpret or transform any object into something else (example: a shower-glass support arm/bracket must stay a support arm, NEVER become a faucet/mixer; a towel rail stays a towel rail; a niche stays a niche).
 - Do NOT add, remove, replace, move, resize, rotate, recolor or invent any object, opening, door, window, niche, fixture or surface.
 - Do NOT invent doors, windows, niches, furniture or any element that is not clearly present in the SketchUp model or analysis.\n- Shower glass supports, brackets, arms and fixings must remain exactly as in the model (do not turn them into taps, mixers or other sanitary fittings).
-- Cladding and tiles stay exactly as in the model (height, material, color). If tiles stop at half-height or only inside the shower, keep it that way.
+- Cladding and tiles stay exactly as in the model (height, material, color). If tiles stop at half-height or only inside the shower, keep it that way. NEVER extend cladding to full height or remove half-height cladding, even if a person is present.
 - You may ONLY improve daylight, soft realistic shadows and realistic reflections on glass, metal, water and polished stone. Nothing else.
 ${inventory ? inventory + '\n' : ''}
 ${lock ? `LOCKED PARTS FROM SKETCHUP (must stay exactly as listed, nothing else, nothing moved):\n${lock}\n` : ''}
