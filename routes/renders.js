@@ -1932,23 +1932,39 @@ router.post('/generate-render', async (req, res, next) => {
       || String(analysis).match(/Pavimento[:\s][\s\S]{0,400}/i)?.[0]
       || '';
     const inventory = String(analysis).match(/INVENTARIO BLOCCATO[\s\S]{0,1600}/i)?.[0] || '';
+    const addPerson = req.body.addPerson === true || req.body.addPerson === '1' || req.body.addPerson === 'true';
+
+    const personBlock = addPerson
+      ? `Include ONE realistic person (average European appearance, natural everyday clothing) performing a natural action appropriate to the room (washing hands at the sink in a bathroom, cooking in a kitchen, sitting on the sofa in a living room, using the shower, etc.). Correct scale, realistic skin with subtle subsurface scattering, natural pose, soft integration with the lighting. Do not add extra people or objects.`
+      : `No people.`;
+
+    const realismBoost = `
+Ultra-photorealistic architectural photography. Soft natural daylight mixed with warm ambient lighting, global illumination, soft realistic shadows and gentle bounce light. 
+Highly detailed physically-based materials: accurate specular reflections and Fresnel on glass, metal, polished stone and water; realistic roughness variation on wood, tiles and paint; subtle surface imperfections and micro-details. 
+Clean, sharp from edge to edge, no vignette, no darkened corners, no CGI plastic look, no over-sharpening.`;
+
     const prompt = fromPhoto
-      ? `LIGHT AND REFLECTIONS ONLY. The first image is the finished SketchUp model, including the client's materials.
-Do not change materials, colors, tiles, wood, paint, metal finishes, or cladding height.
-Do not move, resize, add or replace any object. Same camera. Same openings.
-Kitchen, bathroom or any room: cabinets, handles, appliances, taps, sanitary ware, shower, tub and niches stay exactly as photographed, including their surfaces.
-You may only improve daylight, shadows and realistic reflections on glass, metal, water and polished stone.
+      ? `STRICT OBJECT LOCK. The first image is the finished SketchUp model.
+You MUST keep every object exactly as it is: same furniture, same sanitary ware, same taps, same shower, same niches, same windows, same doors, same mirrors.
+Do NOT add, remove, replace, move, resize or invent any object.
+Do NOT change materials, colors, tiles, wood, paint or metal finishes.
+You may ONLY improve daylight, shadows and realistic reflections on glass, metal, water and polished stone.
 ${inventory ? inventory + '\n' : ''}
-${lock ? `Named parts already in the file:\n${lock}\n` : ''}
+${lock ? `Named parts already in the file (must stay exactly as listed):\n${lock}\n` : ''}
 ${modelBrief || ''}
-No extra bottles, plants or accessories that are not in the photo.
-No SketchUp axes, no text, no people, no watermark. Full frame photorealistic, sharp details from edge to edge, no vignette, no darkened corners, no soft edges, high resolution throughout, no quality loss.`
-      : `Turn the first colored 3D massing into a photoreal room. Keep blocks in place.
+${realismBoost}
+${personBlock}
+No SketchUp axes, no text, no watermark. Full frame photorealistic, sharp details from edge to edge, high resolution throughout.`
+      : `STRICT OBJECT LOCK. Turn the 3D massing into a photoreal room while keeping every block and object in the exact same position.
+Do NOT invent, add or replace any object.
 FLOOR: ${floor || ''}
 WALLS: ${wall || ''}
-${lock ? `Survey:\n${lock}\n` : ''}
+${lock ? `Survey (must be respected exactly):\n${lock}\n` : ''}
 ${modelBrief || ''}
-Style: ${style || 'contemporary Italian interior'}. Photoreal, no text, no people. Full frame photorealistic, sharp details from edge to edge, no vignette, no darkened corners, no soft edges, high resolution throughout, no quality loss.`;
+Style: ${style || 'contemporary Italian interior'}.
+${realismBoost}
+${personBlock}
+Full frame photorealistic, sharp details from edge to edge, no vignette, no darkened corners, high resolution throughout.`;
 
     const item = await generateInteriorImage(prompt, refs);
     const savedPhoto = await saveGeneratedImage(item, 'render');
@@ -2212,11 +2228,20 @@ router.post('/configure-environment', optionalMultipart, async (req, res, next) 
     for (const key of viewKeys.slice(0, 4)) {
       const camera = VIEW_PROMPTS[key] || VIEW_PROMPTS.frontale;
       const isBath = roomType === 'bagno' || roomType === 'bathroom';
+      const floorGloss = String(body.floorGloss || 'opaco').toLowerCase();
+      const wallGloss = String(body.wallGloss || 'opaco').toLowerCase();
+      const glossDesc = (g) => {
+        if (g.includes('lucid')) return 'glossy finish with clear specular reflections and strong Fresnel';
+        if (g.includes('satin')) return 'satin finish with soft, diffused reflections';
+        return 'matte / opaque finish with very low specular reflection and high roughness';
+      };
+
       const prompt = `${scene}.
 Style: ${stylesText}
 Palette (names, RAL or hex): ${colorsText}
-FLOOR ONLY — do not put this finish on walls: ${floorFinish}${floorFile ? ' — match the catalog floor photo' : ''}
-WALLS ONLY — do not put this finish on the floor: ${wallFinish}${wallFile ? ' — match the catalog wall photo' : ''}
+FLOOR ONLY — do not put this finish on walls: ${floorFinish} — ${glossDesc(floorGloss)}${floorFile ? ' — match the catalog floor photo' : ''}
+WALLS ONLY — do not put this finish on the floor: ${wallFinish} — ${glossDesc(wallGloss)}${wallFile ? ' — match the catalog wall photo' : ''}
+MATERIAL ROUGHNESS (critical): Respect the requested gloss level exactly. Matte surfaces must look dull with almost no mirror-like reflection. Glossy surfaces must show clear environment reflections and sharp specular highlights. Do not make matte materials look shiny or glossy materials look flat.
 Cladding height: if the brief or wall finish says mezza altezza / 120 cm, stop tiles there and paint above. If it says tutta altezza, tile floor to ceiling. If it says solo doccia, tile only the shower walls.
 Recessed wall niches (nicchia saponi) described by the user or the model must stay recessed, not a picture or a shelf stuck on the wall.
 Do NOT replace sanitary ware, taps or shower fittings already present in a provided 3D/plan image.
