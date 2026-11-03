@@ -1952,8 +1952,9 @@ The first image is the finished SketchUp model. You MUST reproduce the EXACT SAM
 Do NOT change the viewpoint, do NOT switch from top-down to eye-level or vice-versa, do NOT rotate the room, do NOT zoom differently.
 CRITICAL RULES (must be followed exactly, no exceptions):
 - Keep EVERY object exactly as detected: same shape, same size, same position, same rotation, same color, same material, same roughness (matte/glossy), same cladding height.
+- Do NOT reinterpret or transform any object into something else (example: a shower-glass support arm/bracket must stay a support arm, NEVER become a faucet/mixer; a towel rail stays a towel rail; a niche stays a niche).
 - Do NOT add, remove, replace, move, resize, rotate, recolor or invent any object, opening, door, window, niche, fixture or surface.
-- Do NOT invent doors, windows, niches, furniture or any element that is not clearly present in the SketchUp model or analysis.
+- Do NOT invent doors, windows, niches, furniture or any element that is not clearly present in the SketchUp model or analysis.\n- Shower glass supports, brackets, arms and fixings must remain exactly as in the model (do not turn them into taps, mixers or other sanitary fittings).
 - Cladding and tiles stay exactly as in the model (height, material, color). If tiles stop at half-height or only inside the shower, keep it that way.
 - You may ONLY improve daylight, soft realistic shadows and realistic reflections on glass, metal, water and polished stone. Nothing else.
 ${inventory ? inventory + '\n' : ''}
