@@ -1951,15 +1951,15 @@ Highly detailed physically-based materials with accurate roughness: matte surfac
 Subtle surface imperfections and micro-details. Clean, sharp from edge to edge, no vignette, no darkened corners, no over-sharpening.`;
 
     const prompt = fromPhoto
-      ? `ABSOLUTE VIEW AND OBJECT LOCK.
+      ? `ABSOLUTE VIEW AND OBJECT LOCK.\nCRITICAL: Half-height cladding (mezza altezza) on sanitary walls must stay half-height. Shower glass support arms/poles must stay thin support arms, never become pipes or tubes.
 The first image is the finished SketchUp model. You MUST reproduce the EXACT SAME CAMERA ANGLE, EXACT SAME COMPOSITION, EXACT SAME FRAMING and EXACT SAME PERSPECTIVE as the input image.
 Do NOT change the viewpoint, do NOT switch from top-down to eye-level or vice-versa, do NOT rotate the room, do NOT zoom differently.
 CRITICAL RULES (must be followed exactly, no exceptions):
 - Keep EVERY object exactly as detected: same shape, same size, same position, same rotation, same color, same material, same roughness (matte/glossy), same cladding height.
 - Do NOT reinterpret or transform any object into something else (example: a shower-glass support arm/bracket must stay a support arm, NEVER become a faucet/mixer; a towel rail stays a towel rail; a niche stays a niche).
 - Do NOT add, remove, replace, move, resize, rotate, recolor or invent any object, opening, door, window, niche, fixture or surface.
-- Do NOT invent doors, windows, niches, furniture or any element that is not clearly present in the SketchUp model or analysis.\n- Shower glass supports, brackets, arms and fixings must remain exactly as in the model (do not turn them into taps, mixers or other sanitary fittings).
-- Cladding and tiles stay exactly as in the model (height, material, color). If tiles stop at half-height or only inside the shower, keep it that way. NEVER extend cladding to full height or remove half-height cladding, even if a person is present.
+- Do NOT invent doors, windows, niches, furniture or any element that is not clearly present in the SketchUp model or analysis.\n- Shower glass supports, brackets, arms, poles and fixings must remain exactly as in the model: thin support arms/poles, NOT pipes, tubes, mixers or taps. Do not thicken them or reinterpret them as plumbing.
+- Cladding and tiles stay exactly as in the model (height, material, color). If the SketchUp shows half-height cladding (mezza altezza) on the sanitary walls or only inside the shower, keep it EXACTLY that way. NEVER extend half-height cladding to the ceiling or turn it into full-height tiles.
 - You may ONLY improve daylight, soft realistic shadows and realistic reflections on glass, metal, water and polished stone. Nothing else.
 ${inventory ? inventory + '\n' : ''}
 ${lock ? `LOCKED PARTS FROM SKETCHUP (must stay exactly as listed, nothing else, nothing moved):\n${lock}\n` : ''}
