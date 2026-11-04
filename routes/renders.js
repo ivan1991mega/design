@@ -1945,9 +1945,10 @@ Correct scale, realistic skin with subtle subsurface scattering, natural pose, s
       : `No people.`;
 
     const realismBoost = `
-Ultra-photorealistic architectural photography. Soft natural daylight mixed with warm ambient lighting, global illumination, soft realistic shadows and gentle bounce light. 
-Highly detailed physically-based materials: accurate specular reflections and Fresnel on glass, metal, polished stone and water; realistic roughness variation on wood, tiles and paint; subtle surface imperfections and micro-details. 
-Clean, sharp from edge to edge, no vignette, no darkened corners, no CGI plastic look, no over-sharpening.`;
+Ultra-photorealistic architectural photography, not a cartoon or CGI plastic look. 
+Soft natural daylight mixed with warm ambient lighting, global illumination, soft realistic shadows and gentle bounce light. 
+Highly detailed physically-based materials with accurate roughness: matte surfaces stay dull, satin surfaces have soft diffused reflections, glossy surfaces show clear specular highlights and Fresnel, smoked glass has realistic transparency and tint, polished stone and metal have correct reflections. 
+Subtle surface imperfections and micro-details. Clean, sharp from edge to edge, no vignette, no darkened corners, no over-sharpening.`;
 
     const prompt = fromPhoto
       ? `ABSOLUTE VIEW AND OBJECT LOCK.
@@ -2048,7 +2049,15 @@ router.post('/correct-render', async (req, res, next) => {
     const src = await localRenderPath(prev);
     if (!src) return res.status(404).json({ success: false, error: 'File del render non disponibile' });
 
-    const prompt = `This is the CURRENT finished render. Apply ONLY the user's corrections. Keep camera and everything not mentioned.
+    const isAddPerson = /persona|personaggio|aggiungi una persona|add person/i.test(notes);
+    const prompt = isAddPerson
+      ? `This is the CURRENT finished render. ADD ONE realistic person only.
+Do NOT change camera, composition, any object, fitting, hole, cladding height, material, color or roughness.
+The person must be average European appearance, natural clothing, performing a natural action appropriate to the room (washing hands at the sink in a bathroom, etc.).
+CRITICAL: Do not move or hide any existing object because of the person. Shower fittings and cladding stay exactly as they are.
+The person must cast soft realistic shadows and appear in reflections on mirrors and glass.
+Photoreal, no text, no watermark.`
+      : `This is the CURRENT finished render. Apply ONLY the user's corrections. Keep camera and everything not mentioned.
 User corrections (Italian): ${notes}
 If they mention cladding height, move the tile stop line (mezza altezza ~120 cm, or tutta altezza to the ceiling).
 If they mention a niche, carve a real recess in that wall; do not paint a rectangle.
