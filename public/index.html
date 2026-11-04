@@ -576,14 +576,8 @@
           <div class="section"><label>Colori da applicare (nomi o RAL)</label><input id="renderColors" placeholder="RAL 7030 grigio pietra, bianco sanitari">
             <p class="hint">Colori che vuoi nel render, non una lista generica.</p>
           </div>
-          <div class="section">
-            <label class="chip">
-              <input type="checkbox" id="addPerson" value="1">
-              Aggiungi persona realistica che interagisce con la stanza
-            </label>
-            <p class="hint">Es. si lava le mani in bagno, cucina, si siede sul divano, usa la doccia. Scala e luce coerenti. Non inventa altri oggetti.</p>
-          </div>
           <button type="button" id="generaBtn" onclick="generaRender()" style="width:100%;">Genera render da rilievo</button>
+          <p class="hint">Prima genera il render fedele a SketchUp. La persona si aggiunge dopo, sul risultato.</p>
           <p class="hint">Dopo il render compare sotto la foto il tasto <b>Correggi questo render</b>.</p>
           <button type="button" class="ghost" onclick="applyAnalysisToConfig()" style="width:100%;margin-top:8px;">Porta stanza e finiture nel configuratore</button>
         </div>
@@ -596,6 +590,7 @@
             <textarea id="correctNotes" placeholder="Rimetti la nicchia saponi nella doccia a 120 cm e ferma il gres a mezza altezza sulle altre pareti"></textarea>
             <p class="hint">Una correzione sola, su questa foto. Il testo grigio è un esempio e non viene inviato.</p>
           </div>
+          <button type="button" id="addPersonBtn" onclick="aggiungiPersona()" style="width:100%; margin-bottom:8px;">Aggiungi persona realistica</button>
           <button type="button" id="fixRenderBtn" onclick="correggiRender()" style="width:100%;">Correggi questo render</button>
           <button onclick="downloadRender(window.lastPhotoRenderId, 'render-foto-HQ.png')" style="margin-top:12px;">Download HQ</button>
           <button class="ghost" onclick="resetRender()" style="margin-top:12px;">Ricomincia</button>
@@ -1253,8 +1248,7 @@ async function generaRender() {
       textureRefs: lastTextureRefs,
       style: document.getElementById('renderStyle').value,
       lighting: document.getElementById('renderLighting').value,
-      colors: document.getElementById('renderColors').value,
-      addPerson: document.getElementById('addPerson')?.checked || false
+      colors: document.getElementById('renderColors').value
     })
   });
   const data = await res.json();
@@ -1268,6 +1262,34 @@ async function generaRender() {
     setTimeout(() => downloadRender(data.data.renderId, 'render-progetto-HQ.png'), 600);
     document.getElementById('renderResult').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } else alert(data.error || 'Errore render');
+  });
+}
+
+async function aggiungiPersona() {
+  if (!window.lastPhotoRenderId) {
+    alert('Prima genera un render.');
+    return;
+  }
+  const btn = document.getElementById('addPersonBtn');
+  await withBusy(btn, 'Aggiungo la persona…', async () => {
+    const res = await fetch('/api/renders/correct-render', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        renderId: window.lastPhotoRenderId,
+        notes: 'Aggiungi una persona realistica che interagisce con la stanza (si lava le mani al lavabo in bagno, cucina in cucina, ecc.). Non spostare o modificare nessun oggetto, fitting, foro o rivestimento.',
+        clientId: currentClient || undefined
+      })
+    });
+    const data = await res.json();
+    if (data.success) {
+      const url = data.data.renderUrl + '?t=' + Date.now();
+      const img = document.getElementById('renderImg');
+      if (img) img.src = url;
+      window.lastPhotoRenderId = data.data.renderId;
+      loadStats();
+      loadArchive();
+    } else alert(data.error || 'Errore aggiunta persona');
   });
 }
 
