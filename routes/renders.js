@@ -1945,10 +1945,10 @@ Correct scale, realistic skin with subtle subsurface scattering, natural pose, s
       : `No people.`;
 
     const realismBoost = `
-Ultra-photorealistic architectural photography, not a cartoon or CGI plastic look. 
-Soft natural daylight mixed with warm ambient lighting, global illumination, soft realistic shadows and gentle bounce light. 
-Highly detailed physically-based materials with accurate roughness: matte surfaces stay dull, satin surfaces have soft diffused reflections, glossy surfaces show clear specular highlights and Fresnel, smoked glass has realistic transparency and tint, polished stone and metal have correct reflections. 
-Subtle surface imperfections and micro-details. Clean, sharp from edge to edge, no vignette, no darkened corners, no over-sharpening.`;
+Ultra-photorealistic architectural photography, as if shot with a high-end camera. Not a cartoon, not a CGI plastic look, not an illustration.
+Soft natural daylight from the window mixed with warm ambient lighting, realistic global illumination, soft contact shadows, gentle bounce light and subtle ambient occlusion.
+Highly detailed physically-based materials with accurate roughness and micro-surface variation: matte surfaces stay truly dull, satin surfaces have soft diffused reflections, glossy surfaces show clear but natural specular highlights and Fresnel, smoked glass has realistic transparency, tint and slight reflection, polished stone and metal have correct environment reflections.
+Subtle surface imperfections, grout lines, slight wear, real tile variation. Clean, sharp from edge to edge, no vignette, no darkened corners, no over-sharpening, no plastic sheen.`;
 
     const prompt = fromPhoto
       ? `ABSOLUTE VIEW AND OBJECT LOCK.\nCRITICAL: Half-height cladding (mezza altezza) on sanitary walls must stay half-height. Shower glass support arms/poles must stay thin support arms, never become pipes or tubes.
