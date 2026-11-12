@@ -1943,10 +1943,17 @@ router.post('/generate-render', async (req, res, next) => {
       await pushRef(planImage);
     }
     // Le texture reali (estratte da SKP/ZIP) aiutano il modello a rendere i materiali
-    // veri invece di inventarli: passale SEMPRE, anche quando c'è la vista SKP.
+    // veri invece di inventarli: passale SEMPRE, anche quando c'è la vista SKP,
+    // e tieni i loro nomi per ancorarle alle superfici nel prompt.
     const extraRefs = Array.isArray(textureRefs) ? textureRefs : [];
+    const refNotes = [];
     for (const t of extraRefs.slice(0, 3)) {
-      await pushRef(typeof t === 'string' ? t : t?.filename);
+      const name = typeof t === 'string' ? t : t?.filename;
+      const before = refs.length;
+      await pushRef(name);
+      if (refs.length > before) {
+        refNotes.push(path.basename(String(name)).replace(/^tex-\d+-/, '').replace(/\.(jpe?g|png|webp)$/i, '').replace(/[_]+/g, ' '));
+      }
     }
 
     const room = String(roomType || '').trim();
@@ -1977,7 +1984,7 @@ RENDER QUALITY (mandatory, this is the whole point of the task):
 Ultra-photorealistic interior photography, as if shot on a full-frame camera with natural exposure. Absolutely NOT a cartoon, NOT a flat-shaded CGI, NOT an illustration.
 - Global illumination with soft bounce light, subtle ambient occlusion in corners, inside niches and under every object, gentle contact shadows under every fixture.
 - Real daylight enters from the window: the window glass shows a bright but believable exterior and slight reflections, with a soft light gradient across walls and floor. Never render a window as a flat white rectangle.
-- MIRRORS must reflect the actual room with correct perspective, slightly dimmer than reality. NEVER render a mirror as a flat grey, black or empty shape.
+- MIRRORS are OPAQUE reflective glass: they reflect the actual room with correct perspective, slightly dimmer than reality. NEVER render a mirror as a flat grey, black or empty shape, and NEVER as transparent or see-through glass — you must not see the wall behind through a mirror.
 - Shower/bath glass has true transparency, thin edges, subtle green tint on the edge and soft visible reflections; its thin metal supports and stabilizer bars stay thin and BARE (never a shower rail, hand shower or hose).
 - Physically-based materials with accurate roughness: matte stays truly dull, satin has soft diffused sheen, glossy has crisp speculars with Fresnel; porcelain/gres shows thin grout lines and slight tile-to-tile variation; chrome and polished metal reflect the environment; ceramic sanitaryware has a subtle glaze; wood keeps its visible grain.
 - Smooth painted or panelled surfaces stay smooth: do NOT draw tile joints on a surface that has none in the model.
@@ -1985,6 +1992,7 @@ Clean, sharp from edge to edge, no vignette, no darkened corners, no over-sharpe
 
     const prompt = fromPhoto
       ? `TASK: turn the FIRST input image (a SketchUp view) into an ultra-photorealistic photograph of the SAME room. The first image is the ONLY source of truth for camera, geometry, layout, objects and materials. Any additional input images are real material/texture samples from the project: use them to render those materials faithfully, but NEVER change camera or layout to match them.
+${refNotes.length ? `MATERIAL SAMPLES (the input images after the first one, in order): ${refNotes.join('; ')}. Apply each sample ONLY on the surfaces where that material appears in the first image.` : ''}
 
 SURVEY LOCK (zero tolerance, applies to everything):
 - EXACT same camera angle, composition, framing, perspective and crop as the first image. Do NOT change viewpoint, do NOT switch from top-down to eye-level or vice-versa, do NOT rotate the room, do NOT zoom differently.
@@ -1994,6 +2002,7 @@ SURVEY LOCK (zero tolerance, applies to everything):
 - The render contains EXACTLY the shower heads, hand showers and taps visible in the first image: same number, same type, same position. Never add an extra hand shower or hose.
 - Do NOT add, remove, replace, move, resize, rotate, recolor or invent any object, opening, door, window, niche, fixture, decor or surface. Nothing that is not clearly in the first image.
 - Every surface keeps its material, color, pattern and EXACT boundaries: where a tile or cladding stops in the model, it stops at exactly the same height in the render. Half-height cladding (mezza altezza) stays half-height, full-height stays full-height, shower-only stays shower-only. NEVER extend or shorten a cladding.
+- EACH WALL KEEPS ITS OWN MATERIAL, exactly as in the first image. If one wall is wood panelling it stays wood with visible grain and plank/slat direction; if another wall is smooth grey it stays smooth grey; if another is tiled it stays tiled with the same format. NEVER unify different walls into one material, and NEVER swap a material from one wall to another.
 
 YOUR ONLY JOB is to re-render the SAME scene with photographic realism — same materials made physically real, same layout, better light.
 ${realismBoost}
