@@ -1994,6 +1994,7 @@ SURVEY LOCK (zero tolerance, applies to everything):
 - STAFFA REGGIVETRO: the single thin bar between the edge of the glass screen and the wall is a bare metal glass stabilizer. It MUST be present, exactly ONE, exactly where it is in the first image, with nothing attached: no shower head, no hand shower (doccino), no hose, no slider. Never remove it, never duplicate it, never turn it into a shower rail.
 - Do NOT add, remove, replace, move, resize, rotate, recolor or invent any object, opening, door, window, niche, fixture, decor or surface. Nothing that is not clearly in the first image.
 - Every surface keeps its material, color, pattern and EXACT boundaries: where a tile or cladding stops in the model, it stops at exactly the same height in the render. Half-height cladding (mezza altezza) stays half-height, full-height stays full-height, shower-only stays shower-only. NEVER extend or shorten a cladding.
+- EACH WALL KEEPS ITS OWN MATERIAL, exactly as in the first image: if one wall is smooth it stays smooth, if another has wood grain or grooves it keeps them, if another is tiled it stays tiled. NEVER unify two different walls into the same material and NEVER copy a material from one wall to another.
 
 YOUR ONLY JOB is to re-render the SAME scene with photographic realism — same materials made physically real, same layout, better light.
 ${realismBoost}
