@@ -1701,7 +1701,8 @@ router.post('/analyze-image', analyzeUpload, async (req, res, next) => {
 Per ogni elemento visibile: nome, posizione, quantità. I componenti dello SKP sono VERI: non proporre sostituti di catalogo.
 OBBLIGATORIO su sanitari e accessori:
 - rubinetti/miscelatori: tipo (a parete, da piano, colonna), finitura (cromo, nero, ottone), posizione. NON sostituirli.
-- barre e braccetti sottili sul bordo superiore o laterale del vetro doccia/vasca: sono STABILIZZATORI del vetro fissati al muro, nudi, senza doccino, senza flessibile, senza saliscendi. Scrivili come "stabilizzatore vetro", mai come asta doccia. Conta separatamente quanti soffioni e doccini VERI ci sono e dove.
+- STAFFA REGGIVETRO: la barra sottile tra il bordo del vetro vasca/doccia e la parete è un fissaggio nudo. Chiamala "staffa reggivetro" e di' esattamente da dove a dove va (es. dal bordo alto del vetro alla parete sinistra). NON è un'asta doccia: niente doccino, niente flessibile. Conta a parte quanti soffioni e doccini VERI esistono e dove.
+- FORMA ESATTA di ogni sanitario, perché il render deve rifare le stesse identiche forme: WC e bidet (tondo / ovale / squadrato, sospeso o a terra, con o senza brida), lavabo (ovale / tondo / rettangolare, da appoggio o incasso), vasca (bordo sottile o largo, angoli vivi o raccordati). Scrivi la forma accanto a ogni oggetto.
 - WC, bidet, lavabo, vasca, soffione, doccino: forma e posizione esatte dello SKP.
 - nicchie a muro: se c’è un incavo (saponi in doccia, mensola), scrivi NICCHIA: parete, altezza da terra, dimensioni circa, cosa contiene. Se non c’è, scrivi "nessuna nicchia".
 RIVESTIMENTI — per OGNI parete indica l’ALTEZZA, non solo il materiale:
@@ -1943,17 +1944,10 @@ router.post('/generate-render', async (req, res, next) => {
       await pushRef(planImage);
     }
     // Le texture reali (estratte da SKP/ZIP) aiutano il modello a rendere i materiali
-    // veri invece di inventarli: passale SEMPRE, anche quando c'è la vista SKP,
-    // e tieni i loro nomi per ancorarle alle superfici nel prompt.
+    // veri invece di inventarli: passale SEMPRE, anche quando c'è la vista SKP.
     const extraRefs = Array.isArray(textureRefs) ? textureRefs : [];
-    const refNotes = [];
     for (const t of extraRefs.slice(0, 3)) {
-      const name = typeof t === 'string' ? t : t?.filename;
-      const before = refs.length;
-      await pushRef(name);
-      if (refs.length > before) {
-        refNotes.push(path.basename(String(name)).replace(/^tex-\d+-/, '').replace(/\.(jpe?g|png|webp)$/i, '').replace(/[_]+/g, ' '));
-      }
+      await pushRef(typeof t === 'string' ? t : t?.filename);
     }
 
     const room = String(roomType || '').trim();
@@ -1984,25 +1978,22 @@ RENDER QUALITY (mandatory, this is the whole point of the task):
 Ultra-photorealistic interior photography, as if shot on a full-frame camera with natural exposure. Absolutely NOT a cartoon, NOT a flat-shaded CGI, NOT an illustration.
 - Global illumination with soft bounce light, subtle ambient occlusion in corners, inside niches and under every object, gentle contact shadows under every fixture.
 - Real daylight enters from the window: the window glass shows a bright but believable exterior and slight reflections, with a soft light gradient across walls and floor. Never render a window as a flat white rectangle.
-- MIRRORS are OPAQUE reflective glass: they reflect the actual room with correct perspective, slightly dimmer than reality. NEVER render a mirror as a flat grey, black or empty shape, and NEVER as transparent or see-through glass — you must not see the wall behind through a mirror.
-- Shower/bath glass has true transparency, thin edges, subtle green tint on the edge and soft visible reflections; its thin metal supports and stabilizer bars stay thin and BARE (never a shower rail, hand shower or hose).
+- MIRRORS must reflect the actual room with correct perspective, slightly dimmer than reality. NEVER render a mirror as a flat grey, black or empty shape.
+- Shower/bath glass has true transparency, thin edges, subtle green tint on the edge and soft visible reflections; its thin metal supports stay thin.
 - Physically-based materials with accurate roughness: matte stays truly dull, satin has soft diffused sheen, glossy has crisp speculars with Fresnel; porcelain/gres shows thin grout lines and slight tile-to-tile variation; chrome and polished metal reflect the environment; ceramic sanitaryware has a subtle glaze; wood keeps its visible grain.
 - Smooth painted or panelled surfaces stay smooth: do NOT draw tile joints on a surface that has none in the model.
 Clean, sharp from edge to edge, no vignette, no darkened corners, no over-sharpening, no plastic sheen, no text, no watermark, no SketchUp logo or axes.`;
 
     const prompt = fromPhoto
       ? `TASK: turn the FIRST input image (a SketchUp view) into an ultra-photorealistic photograph of the SAME room. The first image is the ONLY source of truth for camera, geometry, layout, objects and materials. Any additional input images are real material/texture samples from the project: use them to render those materials faithfully, but NEVER change camera or layout to match them.
-${refNotes.length ? `MATERIAL SAMPLES (the input images after the first one, in order): ${refNotes.join('; ')}. Apply each sample ONLY on the surfaces where that material appears in the first image.` : ''}
 
 SURVEY LOCK (zero tolerance, applies to everything):
 - EXACT same camera angle, composition, framing, perspective and crop as the first image. Do NOT change viewpoint, do NOT switch from top-down to eye-level or vice-versa, do NOT rotate the room, do NOT zoom differently.
 - Every object keeps its exact shape, size, position, rotation, count, color and material: window, door, every niche, bathtub/shower tray, glass screens, taps and mixers (wall-mounted stays wall-mounted, same number of spouts and handles, same position), shower head, hand shower, radiator/towel warmer, WC, bidet, flush plate, basin, countertop, mirrors, cabinets.
-- Do NOT reinterpret any object as something else: a shower-glass support arm/bracket/pole stays a thin support arm, NEVER a pipe, tube, faucet, mixer, shower rail or hand shower; a towel rail stays a towel rail; a niche stays a real recess with depth and inner shadow, never a painted rectangle or a shelf.
-- GLASS STABILIZER BAR: the thin horizontal bar along the top or side edge of a glass screen is a stabilizer connecting the glass to the wall. It MUST be present in the render exactly where it appears in the first image — removing it is as wrong as transforming it. It is BARE metal: it carries NO shower head, NO hand shower (doccino), NO hose, NO slider. Do not attach anything to it and do not turn it into a shower rail (asta saliscendi).
-- The render contains EXACTLY the shower heads, hand showers and taps visible in the first image: same number, same type, same position. Never add an extra hand shower or hose.
+- Do NOT reinterpret any object as something else: a shower-glass support arm/bracket/pole stays a thin support arm, NEVER a pipe, tube, faucet or mixer; a towel rail stays a towel rail; a niche stays a real recess with depth and inner shadow, never a painted rectangle or a shelf.
+- STAFFA REGGIVETRO: the single thin bar between the edge of the glass screen and the wall is a bare metal glass stabilizer. It MUST be present, exactly ONE, exactly where it is in the first image, with nothing attached: no shower head, no hand shower (doccino), no hose, no slider. Never remove it, never duplicate it, never turn it into a shower rail.
 - Do NOT add, remove, replace, move, resize, rotate, recolor or invent any object, opening, door, window, niche, fixture, decor or surface. Nothing that is not clearly in the first image.
 - Every surface keeps its material, color, pattern and EXACT boundaries: where a tile or cladding stops in the model, it stops at exactly the same height in the render. Half-height cladding (mezza altezza) stays half-height, full-height stays full-height, shower-only stays shower-only. NEVER extend or shorten a cladding.
-- EACH WALL KEEPS ITS OWN MATERIAL, exactly as in the first image. If one wall is wood panelling it stays wood with visible grain and plank/slat direction; if another wall is smooth grey it stays smooth grey; if another is tiled it stays tiled with the same format. NEVER unify different walls into one material, and NEVER swap a material from one wall to another.
 
 YOUR ONLY JOB is to re-render the SAME scene with photographic realism — same materials made physically real, same layout, better light.
 ${realismBoost}
@@ -2097,7 +2088,7 @@ router.post('/correct-render', async (req, res, next) => {
     const isAddPerson = addPersonFlag || /aggiungi (una )?persona|add (a )?person/i.test(notes);
     const prompt = isAddPerson
       ? `The input image is a FINISHED, APPROVED render. Your task is to reproduce it IDENTICALLY and ADD exactly ONE realistic person. Nothing else changes.
-REPRODUCE IDENTICALLY: same camera, same framing, same perspective, every object in the same position with the same shape, size, color, material and roughness, same cladding heights and tile stop lines, same niches, same glass supports and fittings, same lighting and white balance. Glass stabilizer bars stay bare support bars: never add a shower head, hand shower or hose to them.
+REPRODUCE IDENTICALLY: same camera, same framing, same perspective, every object in the same position with the same shape, size, color, material and roughness, same cladding heights and tile stop lines, same niches, same glass supports and fittings, same lighting and white balance.
 THE PERSON: average European appearance, natural everyday clothing, correct human scale, performing one natural action appropriate to the room (washing hands at the basin in a bathroom, cooking in a kitchen, sitting on the sofa in a living room, etc.).
 INTEGRATION (mandatory): the person casts soft realistic shadows on the floor and nearby surfaces, matching the existing light direction, and appears in reflections on mirrors, shower glass and polished surfaces with correct perspective. Realistic skin with subtle subsurface scattering, natural pose.
 FORBIDDEN: moving, hiding, resizing, recoloring or replacing ANY existing object, fitting, hole, bracket, glass support, niche or surface because of the person; changing any cladding height; adding more people, pets or new objects; changing the camera or the composition.
