@@ -2073,7 +2073,8 @@ router.post('/correct-render', async (req, res, next) => {
   try {
     const notes = String(req.body?.notes || '').trim();
     const renderId = req.body?.renderId;
-    if (!notes) {
+    const enhance = req.body?.enhance === true || req.body?.enhance === 'true' || req.body?.enhance === '1';
+    if (!notes && !enhance) {
       return res.status(400).json({ success: false, error: 'Scrivi cosa correggere (una cosa alla volta).' });
     }
     if (!renderId) {
@@ -2086,7 +2087,17 @@ router.post('/correct-render', async (req, res, next) => {
 
     const addPersonFlag = req.body?.addPerson === true || req.body?.addPerson === 'true' || req.body?.addPerson === '1';
     const isAddPerson = addPersonFlag || /aggiungi (una )?persona|add (a )?person/i.test(notes);
-    const prompt = isAddPerson
+    const enhancePrompt = `The input image is a FINISHED render: layout, objects and materials are ALL correct and approved. Reproduce it IDENTICALLY — same camera, same framing, every object with the same shape, size, position and count, same materials and colors, same cladding heights, same bare glass stabilizer bar — and re-render it with the quality of a REAL PHOTOGRAPH.
+Improve ONLY the photographic rendering:
+- soft directional daylight from the window, with believable soft shadows cast by the bathtub, sanitaryware and furniture onto floor and walls, gentle falloff and bounce light;
+- contact shadows and ambient occlusion under and behind every object and inside niches;
+- physically real materials at close-up quality: thin visible grout lines on tiles, subtle micro-texture on walls, soft glaze reflections on ceramics, crisp chrome reflections of the environment;
+- mirrors reflect the room with correct perspective; shower/bath glass is transparent with subtle realistic reflections, its thin bare support bar unchanged;
+- photographic contrast and white balance, natural exposure, sharp from edge to edge.
+Do NOT add, remove, move, resize or reshape anything. No people, no text, no watermark, no vignette.`;
+    const prompt = enhance
+      ? enhancePrompt
+      : isAddPerson
       ? `The input image is a FINISHED, APPROVED render. Your task is to reproduce it IDENTICALLY and ADD exactly ONE realistic person. Nothing else changes.
 REPRODUCE IDENTICALLY: same camera, same framing, same perspective, every object in the same position with the same shape, size, color, material and roughness, same cladding heights and tile stop lines, same niches, same glass supports and fittings, same lighting and white balance.
 THE PERSON: average European appearance, natural everyday clothing, correct human scale, performing one natural action appropriate to the room (washing hands at the basin in a bathroom, cooking in a kitchen, sitting on the sofa in a living room, etc.).
@@ -2111,8 +2122,8 @@ Do not redesign. Photoreal, no text, no people, no watermark.`;
     const render = await Render.create({
       clientId: client._id,
       adminId: req.adminId,
-      title: `Correzione — ${notes.slice(0, 48)}`,
-      description: notes,
+      title: enhance ? `Render fotografico — ${new Date().toLocaleDateString('it-IT')}` : `Correzione — ${notes.slice(0, 48)}`,
+      description: notes || 'Passata di realismo fotografico',
       imageUrl: saved.imageUrl,
       imageFile: saved.imageName,
       gridFileId: saved.gridFileId,

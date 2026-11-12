@@ -445,6 +445,7 @@
             <label>Cosa non va (una correzione alla volta)</label>
             <textarea id="correctNotesConfig" placeholder="Il rivestimento in doccia deve arrivare al soffitto; fuori doccia fermalo a 120 cm"></textarea>
           </div>
+          <button type="button" id="enhanceConfigBtn" onclick="miglioraRealismo('enhanceConfigBtn')" style="width:100%; margin-bottom:8px;">Migliora realismo (foto)</button>
           <button type="button" id="fixConfigBtn" onclick="correggiRender('correctNotesConfig')" style="width:100%;">Correggi questo render</button>
           <button type="button" id="downloadCurrentBtn" onclick="downloadCurrentView()">Download HQ</button>
           <button type="button" class="ghost" onclick="playViews()">Short viste</button>
@@ -590,6 +591,7 @@
             <textarea id="correctNotes" placeholder="Rimetti la nicchia saponi nella doccia a 120 cm e ferma il gres a mezza altezza sulle altre pareti"></textarea>
             <p class="hint">Una correzione sola, su questa foto. Il testo grigio è un esempio e non viene inviato.</p>
           </div>
+          <button type="button" id="enhanceBtn" onclick="miglioraRealismo('enhanceBtn')" style="width:100%; margin-bottom:8px;">Migliora realismo (foto)</button>
           <button type="button" id="addPersonBtn" onclick="aggiungiPersona()" style="width:100%; margin-bottom:8px;">Aggiungi persona realistica</button>
           <button type="button" id="fixRenderBtn" onclick="correggiRender()" style="width:100%;">Correggi questo render</button>
           <button onclick="downloadRender(window.lastPhotoRenderId, 'render-foto-HQ.png')" style="margin-top:12px;">Download HQ</button>
@@ -1332,6 +1334,39 @@ async function correggiRender(notesId) {
       loadStats();
       loadArchive();
     } else alert(data.error || 'Errore correzione');
+  });
+}
+
+async function miglioraRealismo(btnId) {
+  if (!window.lastPhotoRenderId) {
+    alert('Prima genera un render.');
+    return;
+  }
+  await withBusy(btnId || 'enhanceBtn', 'Rendo fotografico il render…', async () => {
+    const res = await fetch('/api/renders/correct-render', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        renderId: window.lastPhotoRenderId,
+        enhance: true,
+        clientId: currentClient || undefined
+      })
+    });
+    const data = await res.json();
+    if (data.success) {
+      const url = data.data.renderUrl + '?t=' + Date.now();
+      const img = document.getElementById('renderImg');
+      if (img) img.src = url;
+      const cimg = document.getElementById('configImg');
+      if (cimg) cimg.src = url;
+      if (configViews[currentViewIndex]) {
+        configViews[currentViewIndex].renderUrl = data.data.renderUrl;
+        configViews[currentViewIndex].renderId = data.data.renderId;
+      }
+      window.lastPhotoRenderId = data.data.renderId;
+      loadStats();
+      loadArchive();
+    } else alert(data.error || 'Errore realismo');
   });
 }
 
