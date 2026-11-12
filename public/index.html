@@ -1277,6 +1277,7 @@ async function aggiungiPersona() {
       headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         renderId: window.lastPhotoRenderId,
+        addPerson: true,
         notes: 'Aggiungi una persona realistica che interagisce con la stanza (si lava le mani al lavabo in bagno, cucina in cucina, ecc.). Non spostare o modificare nessun oggetto, fitting, foro o rivestimento.',
         clientId: currentClient || undefined
       })

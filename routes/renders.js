@@ -367,8 +367,8 @@ function sketchupLabel(line) {
 function catalogFinish(name) {
   const raw = String(name || '').replace(/_/g, ' ').trim();
   const t = normName(raw);
-  if (/60\s*x\s*120|60x120/.test(t)) return `gres lastre 60x120 «${raw}»`;
-  if (/30\s*x\s*60|30x60|80\s*x\s*80/.test(t)) return `gres «${raw}»`;
+  if (/60\s*x\s*120|60x120|120\s*x\s*120|120x120|120\s*x\s*280/.test(t)) return `gres lastre grande formato «${raw}»`;
+  if (/30\s*x\s*60|30x60|80\s*x\s*80|60\s*x\s*60/.test(t)) return `gres «${raw}»`;
   if (/(maison|motley|sigma|marazzi|atlas|florim|casalgrande|fmg)/.test(t)) return `gres catalogo «${raw}»`;
   return '';
 }
@@ -1271,6 +1271,15 @@ function skpStringNames(buf) {
     if (t.length < 3 || t.length > 80) return;
     if (!/[A-Za-z]/.test(t)) return;
     if (/^https?:/i.test(t)) return;
+    // Scarta path interni, file e rumore binario: un nome vero di componente
+    // è fatto di lettere/numeri/spazi/underscore, ha abbastanza lettere e una vocale.
+    if (/[\\/]/.test(t)) return;
+    if (/\.(xml|jpe?g|png|bmp|webp|dat|skp|txt)$/i.test(t)) return;
+    if (/^acsp/i.test(t)) return;
+    if (!/^[\w .,'()&+°xX0-9àèéìíòóùú-]+$/.test(t)) return;
+    const letters = (t.match(/[A-Za-zàèéìòù]/g) || []).length;
+    if (letters < 3 || letters / t.length < 0.5) return;
+    if (!/[aeiouAEIOUàèéìòù]/.test(t)) return;
     found.add(t);
   };
   let ascii = '';
@@ -1318,11 +1327,21 @@ async function parseSkpBuffer(buf, doorHint) {
     const mid = pngs.filter((p) => p.buf.length >= 2500 && p.buf.length <= 900000).sort((a, b) => b.buf.length - a.buf.length);
     preview = (mid[0] || pngs.sort((a, b) => b.buf.length - a.buf.length)[0])?.buf || null;
   }
+  // Tiene solo nomi che contengono una PAROLA INTERA di dominio: il formato .skp è binario
+  // e lo scanner raccoglie anche sequenze casuali di byte ("WcSU", "0utV"), che prima
+  // finivano nel prompt come finti componenti. Niente match per sottostringa.
+  const DOMAIN_WORDS = new Set(['wc', 'bidet', 'lavabo', 'lavandino', 'doccia', 'vasca', 'sanitari', 'sanitario', 'porta', 'door', 'finestra', 'window', 'specchio', 'mirror', 'mobile', 'nicchia', 'mensola', 'miscelatore', 'rubinetto', 'rubinetteria', 'soffione', 'doccino', 'piatto', 'box', 'vetro', 'glass', 'cristallo', 'seduta', 'panca', 'termoarredo', 'scaldasalviette', 'radiatore', 'letto', 'bed', 'divano', 'sofa', 'cucina', 'kitchen', 'tavolo', 'sedia', 'armadio', 'cassetta', 'parete', 'muro', 'wall', 'pavimento', 'floor', 'soffitto', 'toilet', 'shower', 'bathtub', 'basin', 'sink', 'maniglia', 'anta', 'pensile', 'colonna', 'lampada', 'faretto', 'portasciugamani', 'scarico', 'piletta', 'sifone', 'telaio', 'infisso', 'battiscopa', 'zoccolo', 'vano', 'muretto', 'tramezzo']);
+  // Parole corte ('wc', 'bed'...) compaiono spesso in byte casuali: valgono solo
+  // se nel nome c'è anche una parola vera di almeno 4 lettere (es. "WC_sospeso").
+  const SHORT_DOMAIN = new Set(['wc', 'bed', 'box', 'tv']);
   const keepName = (n) => {
     const t = normName(n);
-    if (classifyPart(n) !== 'object') return true;
-    if (scoreText(n).confidence > 0) return true;
-    return /(seduta|panca|seat|vetro|glass|box|flessa|tramezzo|divisori|muretto|rubinet|miscelat|piatto|nicchia|mensola|specchio|mobile|lavabo|doccia|bidet|\bwc\b|porta|finestra)/.test(t);
+    const words = t.split(/[^a-z0-9àèéìòù]+/).filter(Boolean);
+    if (words.some((w) => w.length >= 4 && DOMAIN_WORDS.has(w))) return true;
+    const shortDomain = words.some((w) => SHORT_DOMAIN.has(w));
+    const hasRealWord = words.some((w) => /^[a-zàèéìòù]{4,}$/.test(w) && !DOMAIN_WORDS.has(w) && !SHORT_DOMAIN.has(w));
+    if (shortDomain && hasRealWord) return true;
+    return /(miscelat|rubinet|soffion|sanitar|termoarred|scaldasalv|piastrell|rivestiment|acquabella|freestanding)/.test(t);
   };
   const names = skpStringNames(buf).filter(keepName).slice(0, 100);
   const blob = names.join('\n') + ' ' + (doorHint || '');
@@ -1331,12 +1350,18 @@ async function parseSkpBuffer(buf, doorHint) {
   const fixtures = [...new Set(objects.map((o) => o.name))].slice(0, 30);
   const hasSeat = names.some((n) => /seduta|panca|seat|bench/i.test(n));
   const hasGlass = names.some((n) => /vetro|glass|cristallo|box/i.test(n));
+  // Nomi dei materiali/prodotti reali dalle texture interne al file (es. gres di catalogo, piatto doccia)
+  const texProducts = [...new Set((textures || []).map((t) => {
+    const base = (String(t.name).split('/').pop() || '').replace(/\.(jpe?g|png|webp|bmp)$/i, '').replace(/[_]+/g, ' ').trim();
+    return base;
+  }))].filter((n) => n.length > 3 && /[a-zA-Z]{3}/.test(n) && !/^img\d|^M\$|^MO\$|thumbnail|preview|^material$|^_auto/i.test(n)).slice(0, 8);
   const layoutLock = [
-    'COMPONENTI SKETCHUP — usa questi oggetti, non sostituirli con catalogo generico:',
+    objects.length ? 'COMPONENTI SKETCHUP — usa questi oggetti, non sostituirli con catalogo generico:' : '',
     ...objects.slice(0, 25).map((o) => `- ${o.name} [${o.role}]`),
+    texProducts.length ? `MATERIALI REALI DEL FILE (texture interne al modello, riprodurli fedelmente, stesse superfici e stesse altezze): ${texProducts.join(', ')}.` : '',
     hasSeat ? 'In doccia c’è una SEDUTA/PANCA: tenerla. Non toglierla.' : '',
-    hasGlass ? 'Il VETRO doccia è quello del modello: non inventare un box a telaio nero in mezzo alla stanza.' : 'Non aggiungere un box doccia in vetro se non è nel modello.',
-    'Tieni il muro di divisione doccia/lavabi. Stessa inquadratura assonometrica del file.'
+    hasGlass ? 'Il VETRO doccia/vasca è quello del modello: non inventare un box a telaio nero in mezzo alla stanza.' : 'Vetri doccia/vasca: solo quelli visibili nel modello, né aggiunti né tolti.',
+    'Mantieni tutti i muri e divisori interni del modello. Stessa inquadratura del file.'
   ].filter(Boolean).join('\n');
   return {
     format: 'skp',
@@ -1345,7 +1370,7 @@ async function parseSkpBuffer(buf, doorHint) {
     roomScores: scored.scores,
     objects,
     fixtures,
-    materials: textures.map((t) => t.name).slice(0, 20),
+    materials: (texProducts.length ? texProducts : textures.map((t) => t.name)).slice(0, 20),
     layoutLock,
     note: 'File SketchUp (.skp): vista + componenti nativi. Il render deve usare questi oggetti (seduta, vetro, sanitari), non un bagno da catalogo.',
     preview,
@@ -1915,10 +1940,12 @@ router.post('/generate-render', async (req, res, next) => {
     await pushRef(sourceImage);
     if (!sourceImage) {
       await pushRef(planImage);
-      const extraRefs = Array.isArray(textureRefs) ? textureRefs : [];
-      for (const t of extraRefs.slice(0, 2)) {
-        await pushRef(typeof t === 'string' ? t : t.filename);
-      }
+    }
+    // Le texture reali (estratte da SKP/ZIP) aiutano il modello a rendere i materiali
+    // veri invece di inventarli: passale SEMPRE, anche quando c'è la vista SKP.
+    const extraRefs = Array.isArray(textureRefs) ? textureRefs : [];
+    for (const t of extraRefs.slice(0, 3)) {
+      await pushRef(typeof t === 'string' ? t : t?.filename);
     }
 
     const room = String(roomType || '').trim();
@@ -1945,28 +1972,33 @@ Correct scale, realistic skin with subtle subsurface scattering, natural pose, s
       : `No people.`;
 
     const realismBoost = `
-Ultra-photorealistic architectural photography, as if shot with a high-end camera. Not a cartoon, not a CGI plastic look, not an illustration.
-Soft natural daylight from the window mixed with warm ambient lighting, realistic global illumination, soft contact shadows, gentle bounce light and subtle ambient occlusion.
-Highly detailed physically-based materials with accurate roughness and micro-surface variation: matte surfaces stay truly dull, satin surfaces have soft diffused reflections, glossy surfaces show clear but natural specular highlights and Fresnel, smoked glass has realistic transparency, tint and slight reflection, polished stone and metal have correct environment reflections.
-Subtle surface imperfections, grout lines, slight wear, real tile variation. Clean, sharp from edge to edge, no vignette, no darkened corners, no over-sharpening, no plastic sheen.`;
+RENDER QUALITY (mandatory, this is the whole point of the task):
+Ultra-photorealistic interior photography, as if shot on a full-frame camera with natural exposure. Absolutely NOT a cartoon, NOT a flat-shaded CGI, NOT an illustration.
+- Global illumination with soft bounce light, subtle ambient occlusion in corners, inside niches and under every object, gentle contact shadows under every fixture.
+- Real daylight enters from the window: the window glass shows a bright but believable exterior and slight reflections, with a soft light gradient across walls and floor. Never render a window as a flat white rectangle.
+- MIRRORS must reflect the actual room with correct perspective, slightly dimmer than reality. NEVER render a mirror as a flat grey, black or empty shape.
+- Shower/bath glass has true transparency, thin edges, subtle green tint on the edge and soft visible reflections; its thin metal supports stay thin.
+- Physically-based materials with accurate roughness: matte stays truly dull, satin has soft diffused sheen, glossy has crisp speculars with Fresnel; porcelain/gres shows thin grout lines and slight tile-to-tile variation; chrome and polished metal reflect the environment; ceramic sanitaryware has a subtle glaze; wood keeps its visible grain.
+- Smooth painted or panelled surfaces stay smooth: do NOT draw tile joints on a surface that has none in the model.
+Clean, sharp from edge to edge, no vignette, no darkened corners, no over-sharpening, no plastic sheen, no text, no watermark, no SketchUp logo or axes.`;
 
     const prompt = fromPhoto
-      ? `ABSOLUTE VIEW AND OBJECT LOCK.\nCRITICAL: Half-height cladding (mezza altezza) on sanitary walls must stay half-height. Shower glass support arms/poles must stay thin support arms, never become pipes or tubes.
-The first image is the finished SketchUp model. You MUST reproduce the EXACT SAME CAMERA ANGLE, EXACT SAME COMPOSITION, EXACT SAME FRAMING and EXACT SAME PERSPECTIVE as the input image.
-Do NOT change the viewpoint, do NOT switch from top-down to eye-level or vice-versa, do NOT rotate the room, do NOT zoom differently.
-CRITICAL RULES (must be followed exactly, no exceptions):
-- Keep EVERY object exactly as detected: same shape, same size, same position, same rotation, same color, same material, same roughness (matte/glossy), same cladding height.
-- Do NOT reinterpret or transform any object into something else (example: a shower-glass support arm/bracket must stay a support arm, NEVER become a faucet/mixer; a towel rail stays a towel rail; a niche stays a niche).
-- Do NOT add, remove, replace, move, resize, rotate, recolor or invent any object, opening, door, window, niche, fixture or surface.
-- Do NOT invent doors, windows, niches, furniture or any element that is not clearly present in the SketchUp model or analysis.\n- Shower glass supports, brackets, arms, poles and fixings must remain exactly as in the model: thin support arms/poles, NOT pipes, tubes, mixers or taps. Do not thicken them or reinterpret them as plumbing.
-- Cladding and tiles stay exactly as in the model (height, material, color). If the SketchUp shows half-height cladding (mezza altezza) on the sanitary walls or only inside the shower, keep it EXACTLY that way. NEVER extend half-height cladding to the ceiling or turn it into full-height tiles.
-- You may ONLY improve daylight, soft realistic shadows and realistic reflections on glass, metal, water and polished stone. Nothing else.
-${inventory ? inventory + '\n' : ''}
-${lock ? `LOCKED PARTS FROM SKETCHUP (must stay exactly as listed, nothing else, nothing moved):\n${lock}\n` : ''}
-${modelBrief || ''}
+      ? `TASK: turn the FIRST input image (a SketchUp view) into an ultra-photorealistic photograph of the SAME room. The first image is the ONLY source of truth for camera, geometry, layout, objects and materials. Any additional input images are real material/texture samples from the project: use them to render those materials faithfully, but NEVER change camera or layout to match them.
+
+SURVEY LOCK (zero tolerance, applies to everything):
+- EXACT same camera angle, composition, framing, perspective and crop as the first image. Do NOT change viewpoint, do NOT switch from top-down to eye-level or vice-versa, do NOT rotate the room, do NOT zoom differently.
+- Every object keeps its exact shape, size, position, rotation, count, color and material: window, door, every niche, bathtub/shower tray, glass screens, taps and mixers (wall-mounted stays wall-mounted, same number of spouts and handles, same position), shower head, hand shower, radiator/towel warmer, WC, bidet, flush plate, basin, countertop, mirrors, cabinets.
+- Do NOT reinterpret any object as something else: a shower-glass support arm/bracket/pole stays a thin support arm, NEVER a pipe, tube, faucet or mixer; a towel rail stays a towel rail; a niche stays a real recess with depth and inner shadow, never a painted rectangle or a shelf.
+- Do NOT add, remove, replace, move, resize, rotate, recolor or invent any object, opening, door, window, niche, fixture, decor or surface. Nothing that is not clearly in the first image.
+- Every surface keeps its material, color, pattern and EXACT boundaries: where a tile or cladding stops in the model, it stops at exactly the same height in the render. Half-height cladding (mezza altezza) stays half-height, full-height stays full-height, shower-only stays shower-only. NEVER extend or shorten a cladding.
+
+YOUR ONLY JOB is to re-render the SAME scene with photographic realism — same materials made physically real, same layout, better light.
 ${realismBoost}
+${cladding ? `\nCLADDING SURVEY (heights are binding):\n${cladding}\n` : ''}${inventory ? inventory + '\n' : ''}
+${lock ? `LOCKED PARTS FROM SKETCHUP (must stay exactly as listed, nothing else, nothing moved):\n${lock}\n` : ''}
+${floor ? `FLOOR (same as the model, rendered as the real material): ${floor}\n` : ''}${wall ? `WALLS (same as the model, rendered as the real material, same heights): ${wall}\n` : ''}${modelBrief || ''}
 ${personBlock}
-Same exact view as input. No SketchUp axes, no text, no watermark. Full frame photorealistic, sharp details from edge to edge, high resolution throughout.`
+Same exact view as input. Full frame photorealistic, sharp details from edge to edge, high resolution throughout.`
       : `ABSOLUTE SKETCHUP LOCK. Turn the 3D massing into a photoreal room while keeping every block and object in the exact same position, shape, color and material.
 Do NOT invent, add, remove or replace any object or opening.
 Do NOT invent doors or windows.
@@ -2049,26 +2081,29 @@ router.post('/correct-render', async (req, res, next) => {
     const src = await localRenderPath(prev);
     if (!src) return res.status(404).json({ success: false, error: 'File del render non disponibile' });
 
-    const isAddPerson = /persona|personaggio|aggiungi una persona|add person/i.test(notes);
+    const addPersonFlag = req.body?.addPerson === true || req.body?.addPerson === 'true' || req.body?.addPerson === '1';
+    const isAddPerson = addPersonFlag || /aggiungi (una )?persona|add (a )?person/i.test(notes);
     const prompt = isAddPerson
-      ? `This is the CURRENT finished render. ADD ONE realistic person only.
-Do NOT change camera, composition, any object, fitting, hole, cladding height, material, color or roughness.
-The person must be average European appearance, natural clothing, performing a natural action appropriate to the room (washing hands at the sink in a bathroom, etc.).
-CRITICAL: Do not move or hide any existing object because of the person. Shower fittings and cladding stay exactly as they are.
-The person must cast soft realistic shadows and appear in reflections on mirrors and glass.
+      ? `The input image is a FINISHED, APPROVED render. Your task is to reproduce it IDENTICALLY and ADD exactly ONE realistic person. Nothing else changes.
+REPRODUCE IDENTICALLY: same camera, same framing, same perspective, every object in the same position with the same shape, size, color, material and roughness, same cladding heights and tile stop lines, same niches, same glass supports and fittings, same lighting and white balance.
+THE PERSON: average European appearance, natural everyday clothing, correct human scale, performing one natural action appropriate to the room (washing hands at the basin in a bathroom, cooking in a kitchen, sitting on the sofa in a living room, etc.).
+INTEGRATION (mandatory): the person casts soft realistic shadows on the floor and nearby surfaces, matching the existing light direction, and appears in reflections on mirrors, shower glass and polished surfaces with correct perspective. Realistic skin with subtle subsurface scattering, natural pose.
+FORBIDDEN: moving, hiding, resizing, recoloring or replacing ANY existing object, fitting, hole, bracket, glass support, niche or surface because of the person; changing any cladding height; adding more people, pets or new objects; changing the camera or the composition.
 Photoreal, no text, no watermark.`
-      : `This is the CURRENT finished render. Apply ONLY the user's corrections. Keep camera and everything not mentioned.
-User corrections (Italian): ${notes}
-If they mention cladding height, move the tile stop line (mezza altezza ~120 cm, or tutta altezza to the ceiling).
-If they mention a niche, carve a real recess in that wall; do not paint a rectangle.
-Do not replace taps, WC, basin or shower unless they explicitly ask to change that object.
+      : `The input image is the CURRENT finished render. Apply ONLY the user's correction below. Everything not explicitly mentioned stays IDENTICAL: same camera, same framing, same objects, same materials, same colors, same cladding heights, same lighting.
+User correction (Italian): ${notes}
+If the correction mentions cladding height, move the tile stop line exactly as asked (mezza altezza ~120 cm, tutta altezza = floor to ceiling).
+If it mentions a niche, carve a real recess in that wall with depth and inner shadow; do not paint a flat rectangle.
+Do not replace taps, WC, basin or shower unless the correction explicitly asks to change that object.
+Keep mirrors reflecting the room and keep glass transparent with realistic reflections.
 Do not redesign. Photoreal, no text, no people, no watermark.`;
 
     const item = await generateInteriorImage(prompt, [src]);
     const saved = await saveGeneratedImage(item, 'fix');
-    const client = prev.clientId
+    let client = prev.clientId
       ? await Client.findOne({ _id: prev.clientId, adminId: req.adminId })
-      : await ensureClient(req.adminId, req.body?.clientId);
+      : null;
+    if (!client) client = await ensureClient(req.adminId, req.body?.clientId);
 
     const render = await Render.create({
       clientId: client._id,
@@ -2263,6 +2298,7 @@ Palette (names, RAL or hex): ${colorsText}
 FLOOR ONLY — do not put this finish on walls: ${floorFinish} — ${glossDesc(floorGloss)}${floorFile ? ' — match the catalog floor photo' : ''}
 WALLS ONLY — do not put this finish on the floor: ${wallFinish} — ${glossDesc(wallGloss)}${wallFile ? ' — match the catalog wall photo' : ''}
 MATERIAL ROUGHNESS (critical): Respect the requested gloss level exactly. Matte surfaces must look dull with almost no mirror-like reflection. Glossy surfaces must show clear environment reflections and sharp specular highlights. Do not make matte materials look shiny or glossy materials look flat.
+REALISM (critical): ultra-photorealistic photography, not a cartoon or flat CGI. Global illumination, soft bounce light, ambient occlusion in corners and niches, contact shadows under every object. Windows show real daylight and slight glass reflections, never a flat white rectangle. Mirrors reflect the actual room with correct perspective, never a flat grey shape. Shower glass is truly transparent with soft reflections. Gres/tiles show thin grout lines and slight tile-to-tile variation.
 Cladding height: if the brief or wall finish says mezza altezza / 120 cm, stop tiles there and paint above. If it says tutta altezza, tile floor to ceiling. If it says solo doccia, tile only the shower walls.
 Recessed wall niches (nicchia saponi) described by the user or the model must stay recessed, not a picture or a shelf stuck on the wall.
 Do NOT replace sanitary ware, taps or shower fittings already present in a provided 3D/plan image.
